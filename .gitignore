@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+
+# secrets — API keys live only in your local .env
+.env
+.env.*
+!.env.example
+
+# your own work (projects, uploaded pictures, scans, style examples)
+projects/
+style/*
+!style/PUT_STYLE_IMAGES_HERE.txt
+
+# local tool / OS files
+.claude/
+*.log
+.DS_Store
+Thumbs.db

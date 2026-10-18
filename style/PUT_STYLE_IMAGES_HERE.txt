@@ -1,0 +1,3 @@
+Drop a set of example images of Roblox-style 3D models into this folder (png/jpg/webp, up to ~40),
+then in the app click References > Style > "Learn from examples".
+Claude writes style-prompt.md here, and every image generation uses it from then on.

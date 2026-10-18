@@ -1,0 +1,29 @@
+{
+  "name": "blockforge",
+  "version": "1.0.0",
+  "description": "Turn a picture into an almost 1:1 stud-style Roblox model. Local BlockBench-style editor + AI pipeline (TRELLIS 3D scans, picture matching, Claude/Gemini builders, MCP) with Roblox .rbxmx export.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "author": "zielonyxiom",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zielonyxiom/blockforge.git"
+  },
+  "homepage": "https://github.com/zielonyxiom/blockforge#readme",
+  "keywords": ["roblox", "roblox-studio", "lego", "studs", "voxel", "3d-modeling", "blockbench", "image-to-3d", "trellis", "mcp", "claude", "gemini", "threejs"],
+  "scripts": {
+    "start": "node server/server.js",
+    "mcp": "node mcp/mcp-server.js",
+    "mcp:install": "node scripts/install-mcp.mjs",
+    "check": "node -e \"for (const f of ['server/server.js','server/pipeline.js','server/model.js','server/llm.js','server/images.js','server/mesh3d.js','server/roblox.js','server/batch.js','mcp/mcp-server.js','public/app.js','public/mesh.js','public/roblox.js']) require('child_process').execFileSync(process.execPath, ['--check', f], { stdio: 'inherit' }); console.log('all files OK')\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@gradio/client": "^2.7.1",
+    "@huggingface/inference": "^4.13.32",
+    "three": "0.169.0"
+  }
+}
