@@ -129,7 +129,7 @@ Generic slicing turns a tree into a lumpy pile of blocks. When the subject is a 
 
 ### 🏠 House style (the game's own trees)
 Preset **Roblox — House style** (or surface **House**) builds like the game's 50 hand-made trees (measured in `training/STYLE.md`):
-- **Export:** every Part is `SmoothPlastic` + a Roblox **MaterialVariant** from the "2022" pack (`2022 Small Universal` by default, `2022 Small Stud` for trunks/branches/roots, `2022 Weld` for balls; set per part with `variant`), plus **4 Decals** on Front/Back/Left/Right (`rbxassetid://127473043565552`, black, 85 % transparent) for the soft shading. No Studs surfaces. The variants must exist in your place's `MaterialService`.
+- **Export:** every Part is `SmoothPlastic` + a Roblox **MaterialVariant** from the "2022" pack (`2022 Small Universal` by default, `2022 Small Stud` for trunks/branches/roots, `2022 Weld` for balls; set per part with `variant`), plus **4 Decals** on Front/Back/Left/Right (`rbxassetid://127473043565552`, black, 85 % transparent) for the soft shading. No Studs surfaces. The variants must exist in your place's `MaterialService` (folders with the "2022" pack). In a place without them the parts fall back to plain SmoothPlastic; the decals still show.
 - **Geometry:** free sizes and organic tilts. `roblox_snap` does nothing in this style. Trunks are bent, tapering segments; roots are flat boxes tilted ~38°; each canopy blob is a core box plus 2–6 face plates with the same rotation (the "pillow" look).
 - **Templates:** `tree_skeleton` lists the closest of the 50 trees (by shape and colors). `tree_template` outlines one or imports it scaled to the scan (`add: true`). They are read from `training/studio-trees/`.
 
