@@ -194,6 +194,28 @@ function studMaterials(color, kind, size, allFaces = false) {
   return [side, side, mk('studs'), mk('inlet'), side, side];
 }
 
+// House style: the game's 4 side-face decals (black vertical alpha gradient, 85 % transparent)
+// darken each side face toward its bottom by up to ~15 %.
+const GRADIENT_TEX = (() => {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 64;
+  const g = c.getContext('2d'), grad = g.createLinearGradient(0, 0, 0, 64);
+  grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#d9d9d9');
+  g.fillStyle = grad; g.fillRect(0, 0, 4, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const houseCache = new Map();
+function houseMaterials(color, kind, decals) {
+  const top = materialFor(color, kind);
+  if (!decals) return top;
+  const key = `${color}|${kind}`;
+  if (!houseCache.has(key)) { const m = top.clone(); m.map = GRADIENT_TEX; houseCache.set(key, m); }
+  const side = houseCache.get(key);
+  return [side, side, top, top, side, side]; // +x, -x, top, bottom, +z, -z
+}
+
 // Builds a THREE object tree for a model. Group objects sit at their pivot;
 // children are offset by (absolute position - parent pivot).
 function buildModelObject(model, { edges = true } = {}) {
@@ -208,7 +230,9 @@ function buildModelObject(model, { edges = true } = {}) {
         obj.position.set(p.pivot[0] - pp[0], p.pivot[1] - pp[1], p.pivot[2] - pp[2]);
       } else {
         const studs = String(model.style).startsWith('studs') && (p.shape || 'box') === 'box' && !['neon', 'glass', 'forcefield', 'ice'].includes(p.material);
-        obj = new THREE.Mesh(GEO[p.shape] || GEO.box, studs ? studMaterials(p.color, p.material, p.size, model.style === 'studs_all') : materialFor(p.color, p.material));
+        const house = model.style === 'house' && (p.shape || 'box') === 'box' && !['neon', 'glass', 'forcefield'].includes(p.material);
+        obj = new THREE.Mesh(GEO[p.shape] || GEO.box, studs ? studMaterials(p.color, p.material, p.size, model.style === 'studs_all')
+          : house ? houseMaterials(p.color, p.material, p.gradientDecals !== false) : materialFor(p.color, p.material));
         obj.position.set(p.position[0] - pp[0], p.position[1] - pp[1], p.position[2] - pp[2]);
         obj.scale.set(...p.size);
         if (edges && p.material !== 'glass') obj.add(new THREE.LineSegments(EDGES[p.shape] || EDGES.box, edgeMat));

@@ -15,7 +15,7 @@ import { ROBLOX_RULES, presetOf, DEFAULT_PRESET } from './roblox.js';
 import {
   DEFAULT_STYLE, REFERENCE_VIEWS, heroPrompt, viewPrompt, partPrompt,
   PLANNER_SYSTEM, PLAN_TOOL, BUILDER_SYSTEM, SCAN_GUIDE, BUDGET_RULES, PICTURE_RULES, FINISH_TOOL, reviewMessage, STYLE_LEARNER_SYSTEM,
-  ORIENT_SYSTEM, ORIENT_TOOL, TREE_RULES, isTreeSubject,
+  ORIENT_SYSTEM, ORIENT_TOOL, treeRules, isTreeSubject,
 } from './prompts.js';
 
 const dataUrlBuf = (d) => Buffer.from(d.split(',')[1], 'base64');
@@ -224,7 +224,7 @@ export async function buildModel(ctx, { subject, notes, reviewRounds = 2, signal
   tools[tools.length - 1] = { ...tools[tools.length - 1], cache_control: { type: 'ephemeral' } };
   const budget = isFreeProvider();
   const tree = scan && isTreeSubject(`${subject || ''} ${ctx.meta().name || ''}`);
-  const system = [{ type: 'text', text: `${BUILDER_SYSTEM}\n\n${robloxRules(ctx)}${scan ? '\n\n' + SCAN_GUIDE : ''}${ctx.meta().mesh?.cutout ? '\n\n' + PICTURE_RULES : ''}${tree ? '\n\n' + TREE_RULES : ''}${budget ? '\n\n' + BUDGET_RULES : ''}`, cache_control: { type: 'ephemeral' } }];
+  const system = [{ type: 'text', text: `${BUILDER_SYSTEM}\n\n${robloxRules(ctx)}${scan ? '\n\n' + SCAN_GUIDE : ''}${ctx.meta().mesh?.cutout ? '\n\n' + PICTURE_RULES : ''}${tree ? '\n\n' + treeRules(presetId(ctx)) : ''}${budget ? '\n\n' + BUDGET_RULES : ''}`, cache_control: { type: 'ephemeral' } }];
   const preset = presetOf(presetId(ctx));
   if (ctx.store.model.style !== preset.modelStyle && !(preset.modelStyle === 'studs' && ctx.store.model.style === 'studs_all')) ctx.store.exec({ op: 'set_style', style: preset.modelStyle }, 'tool');
   const messages = [{ role: 'user', content }];

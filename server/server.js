@@ -11,6 +11,7 @@ import { PRESETS, DEFAULT_PRESET, presetOf, nearestBrickColor } from './roblox.j
 import { llmReady, llmName, listModels, PROVIDERS } from './llm.js';
 import { imageModelName, canEditImages } from './images.js';
 import { importFolder, runScanQueue, queueSummary } from './batch.js';
+import { treeIndex, loadTemplate, closestTrees, templateParts } from './templates.js';
 
 loadConfig();
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
@@ -237,6 +238,9 @@ async function runTool(name, input = {}) {
         t.accents.length ? `ACCENTS (flowers/fruit/light plates; ${t.accents.length}):` : 'ACCENTS: none found.',
         ...t.accents.map((a) => `  center ${v3(a.center)} size ${v3(a.size)} color ${bc(a.color)}`),
       ];
+      const info = await requestBrowser('mesh_info');
+      const near = closestTrees({ size: info.size, wood: t.wood_color, leaf: t.leaf_color });
+      if (near.length) lines.push(`CLOSEST HOUSE TREES (shape + colors; lower = closer; see tree_template): ${near.map((n) => `${n.file.replace(/\.json$/, '')} (${n.parts} parts, ${n.extents.join('×')}, ${n.colors.slice(0, 3).join(' ')}, score ${n.score})`).join(' · ')}`);
       if (input.add) {
         const g = store.uniqueName('Tree');
         const parts = [{ kind: 'group', name: g, pivot: [0, 0, 0] },
@@ -252,6 +256,23 @@ async function runTool(name, input = {}) {
         lines.push(`Added a draft in group "${g}" (${parts.length - 4} boxes). Refine it against the picture: stud counts, layered canopy slabs, branch angles.`);
       }
       return { text: lines.join('\n') };
+    }
+    case 'tree_template': {
+      if (!input.file) {
+        const all = treeIndex();
+        if (!all.length) throw new Error('No tree templates: training/studio-trees/index.json is missing.');
+        return { text: `House-style tree templates (${all.length}; extents x×y×z studs):\n${all.map((t) => `- ${t.file.replace(/\.json$/, '')}: ${t.parts} parts, ${t.extents.join('×')}, colors ${t.colors.join(' ')}`).join('\n')}` };
+      }
+      const { entry, model } = loadTemplate(input.file);
+      if (input.add) {
+        const height = input.height || meshInfo()?.height || undefined;
+        const prefix = store.uniqueName(`Template_${entry.file.replace(/\.json$/, '')}`);
+        const { parts, scale } = templateParts(model, { height, prefix });
+        store.exec({ op: 'add_parts', parts }, 'tool');
+        return { text: `Imported ${entry.name} (${entry.parts} parts) as group "${prefix}", scaled ×${scale}${height ? ` to ${height} studs tall` : ''}. Now fit it to the picture: move/resize/re-tilt blobs and trunk segments, delete what the picture doesn't have.` };
+      }
+      const outline = new ModelStore(model).describe();
+      return { text: `Template ${entry.name} (${entry.extents.join('×')} studs, ${entry.parts} parts, colors ${entry.colors.join(' ')}):\n${outline}` };
     }
     case 'render_vs_picture': {
       const pic = await pictureCam();

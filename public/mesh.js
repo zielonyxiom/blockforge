@@ -76,12 +76,13 @@ export class MeshRef {
     let removed = 0;
     for (const o of meshes) {
       const g = o.geometry, keep = [];
+      if (g.groups.length > 1) continue; // multi-material ranges: leave as is
       for (let t = 0; t < triCount(g); t++) {
         load(o, t);
         const inPlate = Math.max(a.y, b.y, c.y) <= band && !foot.containsPoint(new THREE.Vector2((a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3));
         if (inPlate) removed++; else keep.push(...tri(g, t));
       }
-      if (keep.length !== triCount(g) * 3) { g.setIndex(keep); g.computeBoundingBox(); g.computeBoundingSphere(); }
+      if (keep.length !== triCount(g) * 3) o.geometry = compactGeometry(g, keep);
     }
     return removed;
   }
@@ -684,6 +685,23 @@ export class MeshRef {
       trunk, branches, canopy, accents,
     };
   }
+}
+
+// A copy of `g` with only the vertices that `index` uses (bounding boxes count every
+// vertex in the buffer, so cut triangles must take their vertices with them).
+function compactGeometry(g, index) {
+  const remap = new Map(), order = [];
+  const newIndex = index.map((i) => { if (!remap.has(i)) { remap.set(i, order.length); order.push(i); } return remap.get(i); });
+  const out = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(g.attributes)) {
+    const arr = new attr.array.constructor(order.length * attr.itemSize);
+    order.forEach((src, dst) => { for (let k = 0; k < attr.itemSize; k++) arr[dst * attr.itemSize + k] = attr.getComponent(src, k); });
+    out.setAttribute(name, new THREE.BufferAttribute(arr, attr.itemSize, attr.normalized));
+  }
+  out.setIndex(newIndex);
+  if (g.groups.length) out.addGroup(0, newIndex.length, g.groups[0].materialIndex);
+  out.computeBoundingBox(); out.computeBoundingSphere();
+  return out;
 }
 
 const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));

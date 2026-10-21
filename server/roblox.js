@@ -64,6 +64,8 @@ function lab(hex) {
   return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
 }
 const colorDist = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+// Perceptual distance (CIELAB ΔE76) between two hex colors.
+export const labDistance = (h1, h2) => Math.sqrt(colorDist(lab(h1), lab(h2)));
 export function nearestBrickColor(hex, palette = BRICKCOLORS) {
   const c = lab(hex);
   let best = null, bd = Infinity;
@@ -73,6 +75,10 @@ export function nearestBrickColor(hex, palette = BRICKCOLORS) {
   }
   return best;
 }
+
+// MaterialVariants of the Roblox "2022 materials" pack used by the house style
+// (they must exist in the place's MaterialService; names must match exactly).
+export const VARIANTS = ['2022 Small Universal', '2022 Small Stud', '2022 Weld', '2022 Stud', '2022 Universal'];
 
 // Roblox Enum.Material values (used by the .rbxmx exporter in the browser too).
 export const ROBLOX_MATERIALS = {
@@ -145,6 +151,25 @@ Rendered with bright soft lighting on a plain neutral light-grey background, ent
 - Color blocking: saturated main colors + one or two accent colors; lighter tone on top surfaces/forward parts, darker tone below. Neon accents for magic/eyes.
 - Foliage/hair/manes: clustered spheres or stacked wedges ("cartoon foliage"), not thin strands.
 - SmoothPlastic everywhere unless the reference demands another material.`,
+  },
+  // The game's own trees (measured on 50 hand-made trees, see training/STYLE.md):
+  // SmoothPlastic + "2022" MaterialVariants + 4 gradient decals, free sizes, organic tilts.
+  roblox_house: {
+    label: 'Roblox — House style (2022 variants, tilted)',
+    modelStyle: 'house',
+    defaultMaterial: 'smooth',
+    image: `Style: a stylized Roblox game asset built from chunky rectangular blocks in SmoothPlastic with a fine small-stud material texture, each side face softly darkening toward the bottom.
+Blocks are freely sized and casually tilted (a few degrees to 45°), overlapping like a hand-built Roblox Studio model: bending tapered trunks made of stacked segments, pillow-like canopy blobs made of a core block with thinner plates on its faces.
+One or two bright, saturated colors plus an accent color, no outlines, no classic studs.
+Rendered like a Roblox Studio screenshot with soft daylight on a plain neutral light-grey background, the whole model centered with margin, no scene, no text.`,
+    rules: `## Style: House style (the game's own builds) — follow strictly
+- Material SmoothPlastic ("smooth") on every part (Neon only for glowing bits). The look comes from a Roblox MaterialVariant per part (\`variant\`) plus 4 gradient decals on the side faces, both added on export:
+  - "2022 Small Universal" = default for everything (canopy, leaves, details),
+  - "2022 Small Stud" = trunks, branches, roots and other wood,
+  - "2022 Weld" = round canopy balls (sphere shape), "2022 Stud" / "2022 Universal" = rare big flat surfaces.
+- Sizes are FREE (not whole studs) and almost every part is tilted off the 90° grid: trunk segments 5–25°, branches 25–60°, roots ~38°, canopy blocks 2–15° pitch/roll plus any yaw.
+- NEVER run roblox_snap in this style (it would destroy the tilts and free sizes).
+- Typical tree: 25–175 parts, median 15 tall × 13 wide. Usually 2 colors (dark saturated trunk, bright saturated canopy) plus an accent; a canopy is one exact color (the decals do the shading).`,
   },
   custom: {
     label: 'Custom (style/ folder)',

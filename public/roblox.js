@@ -54,17 +54,46 @@ function partXml(p, obj, style) {
   const studs = String(style).startsWith('studs') && cls === 'Part' && shape === 1 && !mesh && !['neon', 'glass', 'forcefield', 'ice'].includes(p.material);
   const top = studs ? SURF.studs : SURF.smooth, bottom = studs ? SURF.inlet : SURF.smooth;
   const transparency = p.material === 'glass' ? 0.5 : 0;
+  // House style: SmoothPlastic + a "2022" MaterialVariant + 4 shading decals on the side faces.
+  const special = ['neon', 'glass', 'forcefield'].includes(p.material);
+  const house = style === 'house' && !special;
+  const material = house ? 'smooth' : p.material;
+  const variant = house ? (p.variant || defaultVariant(p)) : p.variant;
+  const decals = house && p.gradientDecals !== false ? GRADIENT_FACES.map(decalXml).join('') : '';
   return `<Item class="${cls}" referent="${ref()}"><Properties>` +
     `<bool name="Anchored">true</bool><bool name="CanCollide">true</bool>` +
     cframe(pos, rot) + color3(p.color) +
-    `<token name="Material">${MATERIAL_TOKEN[p.material] ?? 256}</token>` +
+    `<token name="Material">${MATERIAL_TOKEN[material] ?? 256}</token>` +
+    (variant ? `<string name="MaterialVariantSerialized">${esc(variant)}</string>` : '') +
     `<string name="Name">${esc(p.name)}</string>` +
     `<float name="Transparency">${transparency}</float>` +
     vec3('size', size) +
     (cls === 'Part' ? `<token name="shape">${shape}</token>` : '') +
     `<token name="TopSurface">${top}</token><token name="BottomSurface">${bottom}</token>` +
     ['Front', 'Back', 'Left', 'Right'].map((f) => `<token name="${f}Surface">${studs && style === 'studs_all' ? SURF.studs : SURF.smooth}</token>`).join('') +
-    `</Properties>${mesh}</Item>`;
+    `</Properties>${mesh}${decals}</Item>`;
+}
+
+// House-style shading decal: a vertical alpha gradient (dark toward the bottom) on each side face.
+// Enum.NormalId: Right 0, Top 1, Back 2, Left 3, Bottom 4, Front 5.
+const GRADIENT_TEXTURE = 'rbxassetid://127473043565552';
+const GRADIENT_FACES = [5, 2, 3, 0];
+const decalXml = (face) => `<Item class="Decal" referent="${ref()}"><Properties>` +
+  `<string name="Name">Decal</string><token name="Face">${face}</token>` +
+  `<Content name="Texture"><url>${GRADIENT_TEXTURE}</url></Content>` +
+  `<Color3 name="Color3"><R>0</R><G>0</G><B>0</B></Color3>` +
+  `<float name="Transparency">0.85</float><int name="ZIndex">1</int>` +
+  `</Properties></Item>`;
+
+// Wood (trunks, branches, roots) gets the stud variant, everything else the small universal one.
+function defaultVariant(p) {
+  if (p.shape === 'sphere') return '2022 Weld';
+  if (/trunk|branch|root|twig|wood|stem|log|bark|base/i.test(p.name || '')) return '2022 Small Stud';
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(p.color.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const hue = max === min ? 0 : max === r ? (60 * ((g - b) / (max - min)) + 360) % 360 : max === g ? 60 * ((b - r) / (max - min)) + 120 : 60 * ((r - g) / (max - min)) + 240;
+  const brown = hue >= 10 && hue <= 45 && max < 0.6 && (max - min) / max > 0.25;
+  return brown ? '2022 Small Stud' : '2022 Small Universal';
 }
 
 // buildModelObject: the editor's builder (returns { root, objects }).

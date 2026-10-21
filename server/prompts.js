@@ -165,6 +165,25 @@ Trees are a trunk skeleton plus a few big canopy blocks — don't slice them lik
 7. Colors: wood_color for trunk/branches, each cluster's color for its blocks (keep the darker/lighter shades the picture shows), then colors_from_picture.
 8. Checks: render_vs_picture after the trunk+branches+canopy pass, fix RED/BLUE, then polish_model. If you run roblox_snap mode "studs", pass keep_tilt: true so branches keep their angle.`;
 
+// Tree mode in the house style (measured on the game's 50 hand-made trees, training/STYLE.md).
+// Replaces steps 2–5 of TREE_RULES; the skeleton numbers still give placement.
+export const HOUSE_TREE_RULES = `## Tree mode (the subject is a tree) — HOUSE STYLE
+Build it the way the game's own 50 trees are built. tree_skeleton gives the placement, and tree_template the closest hand-made tree.
+1. Call tree_skeleton FIRST (trunk axis, branch segments, canopy clusters, colors). It also lists the closest house trees. Look at the best one with tree_template (file) to copy its proportions and part counts. tree_template with add: true imports it scaled to the scan as a starting point, if it is close.
+2. TRUNK = 3–8 stacked SEGMENTS (Group "Trunk"), square-ish boxes ~2.2 long (length ≈ 2.3 × width), each ~0.94× as wide as the one below (base 1.5–3 wide, top 0.4–1). Each one is rotated 5–25° relative to the one below so the trunk BENDS along the skeleton axis. Segments overlap 10–30% of their length (no gaps). variant "2022 Small Stud".
+3. ROOTS (when the picture has them): 2–6 flat boxes (~1.6 × 1.3 × 3.4) around the base, tilted ~38° outward, every ~90° of yaw (X or + pattern). Or a wide flat base slab / 2–3 slabs stepping inward.
+4. BRANCHES: a Y-fork at 50–65% of the height is common. Each branch is 2–4 thinner segments (0.4–1.2 wide) following the skeleton segment (tilt 25–60°), ending INSIDE a canopy blob.
+5. CANOPY starts at ~59% of the height and is 1–3 BLOBS (one per canopy cluster). Each blob:
+   a. CORE: one big box filling most of the cluster (e.g. 6 × 4 × 6), with ONE rotation (any yaw, 2–15° pitch/roll).
+   b. FACE PLATES: 2–6 thinner boxes with EXACTLY the core's rotation, stuck on its faces (top and bottom first, then front/back, then sides). They are ~1.2 thick (0.55–1.7), cover ~75–85% of the face and stick out ~0.6 beyond it. This stepped "pillow" outline is the signature look, so every blob gets plates.
+   c. Blobs overlap, offset sideways and in height (a big top blob + 1–2 smaller lower side blobs), each with its own yaw/tilt.
+   Other canopy types if the picture shows them: tiered slabs shrinking upward (Christmas tree), palm fronds (long thin boards 8 × 0.6 × 1.5 tilted 20–40° down), mushroom caps (stepped slabs), sphere-shaped blobs only for round balls (variant "2022 Weld").
+6. COLORS: one exact color for the whole canopy, a dark saturated trunk (e.g. #5a3f2e). Accents (fruit, flowers, gems) in a strong color; fruit = a small beveled cube (core + 2 slabs) with a stem. The gradient decals do the shading, so don't paint shades by hand.
+7. Sizes are free and parts are tilted. NEVER call roblox_snap. Typical part count 25–175 (median 56).
+8. Checks: render_vs_picture, fix RED/BLUE, polish_model, colors_from_picture, export_roblox (writes SmoothPlastic + MaterialVariant + 4 gradient decals per part).`;
+
+export const treeRules = (presetId) => (presetId === 'roblox_house' ? HOUSE_TREE_RULES : TREE_RULES);
+
 // Appended when the brain is a free model with a tiny request budget.
 export const BUDGET_RULES = `## Request budget (important)
 You run on a free tier: every reply you send costs one request and there are only a few. Work in BIG batches:

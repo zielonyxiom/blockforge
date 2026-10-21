@@ -8,12 +8,13 @@
 //   Group `pivot` is an absolute point; group `rotation` rotates all children around it.
 //   Rotations are Euler degrees [x, y, z] (XYZ order).
 
-import { ROBLOX_MATERIALS, BRICKCOLORS, snapModel } from './roblox.js';
+import { ROBLOX_MATERIALS, BRICKCOLORS, VARIANTS, snapModel } from './roblox.js';
 
 export const SHAPES = ['box', 'cylinder', 'sphere', 'wedge'];
 export const MATERIALS = Object.keys(ROBLOX_MATERIALS);
 // smooth = no studs · studs = classic stud tops + inlet bottoms · studs_all = studs on every face (inlets below)
-export const STYLES = ['smooth', 'studs', 'studs_all'];
+// house = the game's own look: SmoothPlastic + 2022 MaterialVariants + gradient decals
+export const STYLES = ['smooth', 'studs', 'studs_all', 'house'];
 export const isStuds = (style) => String(style || '').startsWith('studs');
 
 const MAX_HISTORY = 200;
@@ -53,6 +54,11 @@ const BASIC_COLORS = {
   pink: '#ff66cc', brown: '#694028', white: '#f2f3f3', black: '#1b2a35', gray: '#a3a2a5', grey: '#a3a2a5',
   cyan: '#04afec', lime: '#00ff00', gold: '#dcbc81', silver: '#9ca3a8', beige: '#cabfa3', tan: '#d7c59a',
 };
+function variant(v) {
+  const hit = VARIANTS.find((x) => x.toLowerCase() === String(v).trim().toLowerCase());
+  if (!hit) throw new Error(`variant must be one of ${VARIANTS.join(', ')}`);
+  return hit;
+}
 function color(c, fallback) {
   if (c === undefined || c === null) return fallback;
   if (typeof c === 'string') {
@@ -157,6 +163,8 @@ export class ModelStore {
       shape,
       material,
       visible: spec.visible !== false,
+      ...(spec.variant ? { variant: variant(spec.variant) } : {}),
+      ...(spec.gradientDecals !== undefined ? { gradientDecals: !!spec.gradientDecals } : {}),
     };
   }
 
@@ -181,6 +189,8 @@ export class ModelStore {
       if (u.color !== undefined) p.color = color(u.color, p.color);
       if (u.shape !== undefined) { if (!SHAPES.includes(u.shape)) throw new Error('bad shape'); p.shape = u.shape; }
       if (u.material !== undefined) { if (!MATERIALS.includes(u.material)) throw new Error('bad material'); p.material = u.material; }
+      if (u.variant !== undefined) { if (u.variant) p.variant = variant(u.variant); else delete p.variant; }
+      if (u.gradientDecals !== undefined) p.gradientDecals = !!u.gradientDecals;
     }
     // Relative helpers
     if (u.move !== undefined) {
@@ -307,6 +317,7 @@ export class ModelStore {
         return { ok: true, style: cmd.style };
       }
       case 'roblox_snap': {
+        if (this.model.style === 'house' && !cmd.mode) return { mode: 'house', changed: 0, note: 'House style keeps free sizes and tilts: nothing snapped. Pass mode explicitly to force it.' };
         const mode = cmd.mode || (isStuds(this.model.style) ? 'studs' : 'smooth');
         const changed = snapModel(this.model, { mode, colors: cmd.colors !== false, keepTilt: !!cmd.keep_tilt });
         return { mode, changed };
@@ -354,7 +365,7 @@ export class ModelStore {
   describe() {
     const m = this.model;
     if (!m.parts.length) return `Model "${m.name}" is empty.`;
-    const lines = [`Model "${m.name}" (${({ studs: 'classic studs on top', studs_all: 'studs on every face', smooth: 'smooth' })[m.style] || 'smooth'} style) — ${m.parts.length} parts. Format: id name [type] ...`];
+    const lines = [`Model "${m.name}" (${({ studs: 'classic studs on top', studs_all: 'studs on every face', smooth: 'smooth', house: 'house (2022 variants + gradient decals)' })[m.style] || 'smooth'} style) — ${m.parts.length} parts. Format: id name [type] ...`];
     const walk = (pid, depth) => {
       for (const p of this.children(pid)) {
         const pad = '  '.repeat(depth);
@@ -363,7 +374,7 @@ export class ModelStore {
           walk(p.id, depth + 1);
         } else {
           const rot = p.rotation.some((x) => x) ? ` rot=${JSON.stringify(p.rotation)}` : '';
-          const extra = (p.shape !== 'box' ? ` shape=${p.shape}` : '') + (p.material !== 'plastic' ? ` mat=${p.material}` : '');
+          const extra = (p.shape !== 'box' ? ` shape=${p.shape}` : '') + (p.material !== 'plastic' ? ` mat=${p.material}` : '') + (p.variant ? ` variant="${p.variant}"` : '') + (p.gradientDecals === false ? ' noDecals' : '');
           lines.push(`${pad}${p.id} ${p.name} pos=${JSON.stringify(p.position)} size=${JSON.stringify(p.size)}${rot} ${p.color}${extra}${p.visible ? '' : ' hidden'}`);
         }
       }
@@ -402,6 +413,8 @@ const PART_PROPS = {
   rotation: { ...V3, description: 'Euler degrees [x,y,z]. For cubes: around the cube center. For groups: around the pivot.' },
   color: { type: 'string', description: 'cube only: hex color "#rrggbb"' },
   shape: { type: 'string', enum: SHAPES, description: 'cube only: box (default), cylinder (axis = Y), sphere (ellipsoid fitting size), wedge (ramp: full height at -Z, slopes down to +Z)' },
+  variant: { type: 'string', enum: [...VARIANTS, ''], description: 'cube only, house style: Roblox MaterialVariant written on export ("" = automatic: "2022 Small Stud" for wood-colored parts, else "2022 Small Universal")' },
+  gradientDecals: { type: 'boolean', description: 'cube only, house style: add the 4 side-face shading decals on export (default true)' },
   material: { type: 'string', enum: MATERIALS, description: 'cube only: Roblox material. smooth = SmoothPlastic (default in smooth style), plastic (default in studs style), neon glows, glass is translucent, plus wood, woodplanks, slate, concrete, brick, granite, marble, cobblestone, fabric, grass, sand, ice, foil, diamondplate, corrodedmetal, forcefield' },
 };
 
@@ -460,7 +473,7 @@ export const MODEL_TOOLS = [
   },
   {
     name: 'set_surface_style',
-    description: 'How part surfaces look and export to Roblox: smooth (no studs), studs (classic: studs on top, inlets below), studs_all (studs on every face, like stud-covered brick art).',
+    description: 'How part surfaces look and export to Roblox: smooth (no studs), studs (classic: studs on top, inlets below), studs_all (studs on every face, like stud-covered brick art), house (the game style: SmoothPlastic + 2022 MaterialVariant + 4 gradient decals per part, free sizes and tilts).',
     input_schema: { type: 'object', properties: { style: { type: 'string', enum: STYLES } }, required: ['style'] },
   },
   {
@@ -526,6 +539,18 @@ export const SCAN_TOOLS = [
         res: { type: 'number', description: 'voxels along the longest side (24–64, default 48)' },
         clusters: { type: 'number', description: 'force this many canopy clusters (default: automatic)' },
         add: { type: 'boolean', description: 'also add the draft boxes to the model (group "Tree")' },
+      },
+    },
+  },
+  {
+    name: 'tree_template',
+    description: 'HOUSE-STYLE TREES. The game\'s 50 hand-made trees (training/studio-trees) as templates. Without file: lists them (size, part count, colors). With file: outlines that tree (groups, parts, sizes, rotations, variants) so you can copy its construction. add: true imports it into the model scaled to `height` (default: the 3D scan\'s height, else its own size) as a starting point; then reshape it to the picture.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'template file or name from the list, e.g. "blue_tree"' },
+        add: { type: 'boolean', description: 'import it into the model (group "Template_<name>")' },
+        height: { type: 'number', description: 'target height in studs for add (default: scan height)' },
       },
     },
   },

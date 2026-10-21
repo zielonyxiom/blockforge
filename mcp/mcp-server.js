@@ -4,7 +4,7 @@
 // The app must be running (npm start) and the editor open in a browser for renders.
 import { loadConfig } from '../server/config.js';
 import { MODEL_TOOLS, RENDER_TOOL, SCAN_TOOLS } from '../server/model.js';
-import { BUILDER_SYSTEM, SCAN_GUIDE, PICTURE_RULES, TREE_RULES, isTreeSubject } from '../server/prompts.js';
+import { BUILDER_SYSTEM, SCAN_GUIDE, PICTURE_RULES, treeRules, isTreeSubject } from '../server/prompts.js';
 import { ROBLOX_RULES, PRESETS, presetOf } from '../server/roblox.js';
 import { MESH_BACKENDS } from '../server/mesh3d.js';
 
@@ -49,7 +49,7 @@ const EXTRA_TOOLS = [
   },
   {
     name: 'new_project',
-    description: 'Create and open a new empty project (also sets the subject). preset = Roblox style: roblox_smooth (modern, default), roblox_studs (classic studs/LEGO), roblox_lowpoly (trending stylized), custom.',
+    description: 'Create and open a new empty project (also sets the subject). preset = Roblox style: roblox_smooth (modern, default), roblox_studs (classic studs/LEGO), roblox_lowpoly (trending stylized), roblox_house (the game own look: 2022 MaterialVariants + gradient decals, free sizes and tilts), custom.',
     input_schema: { type: 'object', properties: { name: { type: 'string' }, preset: { type: 'string', enum: Object.keys(PRESETS) } }, required: ['name'] },
   },
   {
@@ -88,7 +88,7 @@ async function callTool(name, args = {}) {
       const st = await http('/api/state');
       const preset = presetOf(st.project?.preset);
       const tree = args.tree ?? isTreeSubject(`${st.project?.subject || ''} ${st.project?.name || ''}`);
-      return text(`${BUILDER_SYSTEM}\n\n${ROBLOX_RULES}\n\n${preset.rules}\n\n${PICTURE_RULES}\n\n${SCAN_GUIDE}\n(The scan tools only work after generate_mesh or when the project already has a scan.)${tree ? '\n\n' + TREE_RULES : ''}\nWhen done: export_roblox.`);
+      return text(`${BUILDER_SYSTEM}\n\n${ROBLOX_RULES}\n\n${preset.rules}\n\n${PICTURE_RULES}\n\n${SCAN_GUIDE}\n(The scan tools only work after generate_mesh or when the project already has a scan.)${tree ? '\n\n' + treeRules(st.project?.preset) : ''}\nWhen done: export_roblox.`);
     }
     case 'set_style_preset': {
       await http('/api/projects/preset', { preset: args.preset });
