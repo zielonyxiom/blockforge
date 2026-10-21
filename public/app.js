@@ -517,7 +517,7 @@ function meshSheet(views) {
 function compareSheet(views) {
   views = views?.length ? views : ALL_VIEWS;
   const T = 384;
-  const iou = {};
+  const iou = {}, cover = {};
   const image = studio(() => {
     const box = unionBounds();
     const tiles = [];
@@ -528,9 +528,10 @@ function compareSheet(views) {
       const mB = shoot(v, box, T, 'model', true).getContext('2d').getImageData(0, 0, T, T).data;
       const mctx = model.getContext('2d');
       const img = mctx.getImageData(0, 0, T, T);
-      let inter = 0, uni = 0;
+      let inter = 0, uni = 0, scanPx = 0;
       for (let i = 0; i < mA.length; i += 4) {
         const a = mA[i] > 128, b = mB[i] > 128;
+        if (a) scanPx++;
         if (a || b) uni++;
         if (a && b) inter++;
         else if (a) { img.data[i] = img.data[i] * 0.3 + 230 * 0.7; img.data[i + 1] *= 0.3; img.data[i + 2] *= 0.3; }
@@ -538,12 +539,13 @@ function compareSheet(views) {
       }
       mctx.putImageData(img, 0, 0);
       iou[v] = uni ? Math.round((inter / uni) * 1000) / 1000 : 1;
+      cover[v] = scanPx ? Math.round((inter / scanPx) * 1000) / 1000 : 1; // share of the scan's silhouette the model fills
       tiles.push({ canvas: scan, text: `SCAN ${VIEW_LABEL[v] || v}`, w: 230 });
       tiles.push({ canvas: model, text: `MODEL ${v} IoU ${iou[v].toFixed(2)}`, w: 230 });
     }
     return sheetOf(tiles, 4, T);
   });
-  return { image, iou };
+  return { image, iou, cover };
 }
 
 // ---- Local auto-orient: match the picture's cut-out against the scan at 4 yaws ----

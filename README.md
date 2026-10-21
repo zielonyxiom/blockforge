@@ -59,6 +59,7 @@ Click **Settings** in the app and paste:
 
 - 🖼️ **Picture → Roblox model** — a render, an AI image or a screenshot. Click **🖼 Build from my image**.
 - 🧊 **Free 3D scan** — removes the background (BRIA RMBG-2.0) and reconstructs the object in 3D (TRELLIS / TRELLIS.2 / Hunyuan3D-2 / Hunyuan3D-2.1 / SAM 3D Objects on Hugging Face, pick one in Settings) for exact depth and proportions.
+- 🔄 **All sides, not just the front** — the picture shows one side, so the builder also builds the back and sides (depth ≈ 0.87× width, mirrored or its own details at the back). `render_vs_picture` / `check_sides` report how much of the scan's back, left and right silhouette the model covers, a flat or shallow model, details only on the front, and glitchy strips ≤ 0.15 thick.
 - 🎯 **Checks itself against your picture** — finds the camera angle and lens the picture was taken with, renders the model from exactly that view and overlays it on your picture (red = missing, blue = extra, plus a match score).
 - ✨ **Auto-polish** — nudges every part's position, size and tilt until the model matches your picture *and* the 3D scan from 5 sides, while keeping the build clean and blocky.
 - 🎨 **Colors from your picture** — reads each material's real color off the picture (lit faces, not shadows).
@@ -67,9 +68,9 @@ Click **Settings** in the app and paste:
 - 🟥 **Roblox rules built in** — stud scale, one primitive = one Part, BrickColors, 21 Roblox materials, rig-ready groups. Styles: **Smooth (modern)**, **Studs (classic)**, **Stylized low-poly (trending)**, **House (2022 variants)**; surfaces: **Smooth / Studs on top / Studs everywhere / House**.
 - 📦 **Exports to Roblox Studio** (`.rbxmx`: anchored Parts & WedgeParts in named Models, studs surfaces) plus GLB / OBJ / JSON; imports BlockBench `.bbmodel`.
 - 🗂️ **Batch import** — turn a whole folder of pictures into projects; scans run as your free quota allows and resume later.
-- 🤖 **Claude Code integration (MCP)** — Claude drives the editor with 28 tools for the best builds, no API key needed.
+- 🤖 **Claude Code integration (MCP)** — Claude drives the editor with 30 tools for the best builds, no API key needed.
 
-**Measured on test pictures:** silhouette match with the original picture **0.90** for a stud-style fish and a stud-style tree after auto-polish (1.0 = identical). Tree mode on the blue stud tree: **0.90** in the house style (Hunyuan3D-2.1 scan, 38 parts), **0.86** / **0.85** as classic studs with Hunyuan3D-2.1 / TRELLIS (21 parts).
+**Measured on test pictures:** silhouette match with the original picture **0.90** for a stud-style fish and a stud-style tree after auto-polish (1.0 = identical). Tree mode on the blue stud tree: **0.88** in the house style with a full back side and roots (Hunyuan3D-2.1 scan, 62 parts; back/left/right 0.96–0.97 covered; 0.90 front-only), **0.86** / **0.85** as classic studs with Hunyuan3D-2.1 / TRELLIS (21 parts).
 
 ---
 
@@ -106,9 +107,9 @@ Keep BlockForge open, start a **new** Claude Code session and say:
 > *Use blockforge: open my project, read the build guide, measure the scan with mesh_slices, count the studs in the picture, build it, run polish_model and colors_from_picture, check with render_vs_picture and fix what's red or blue, then export to Roblox.*
 
 <details>
-<summary>All 28 MCP tools</summary>
+<summary>All 30 MCP tools</summary>
 
-`get_build_guide` · `new_project` · `set_style_preset` · `set_surface_style` · `generate_references` · `generate_part_reference` · `generate_mesh` · `set_mesh_transform` · `list_references` · `view_reference` · `get_model` · `add_parts` · `update_parts` · `delete_parts` · `mirror_part` · `duplicate_part` · `clear_model` · `roblox_snap` · `render_views` · **`render_vs_picture`** · **`polish_model`** · **`colors_from_picture`** · `render_comparison` · `mesh_slices` · **`tree_skeleton`** · **`tree_template`** · `blockify_mesh` · `export_roblox`
+`get_build_guide` · `new_project` · `set_style_preset` · `set_surface_style` · `generate_references` · `generate_part_reference` · `generate_mesh` · `set_mesh_transform` · `list_references` · `view_reference` · `get_model` · `add_parts` · `update_parts` · `delete_parts` · `mirror_part` · `duplicate_part` · `clear_model` · `roblox_snap` · `render_views` · **`render_vs_picture`** · **`polish_model`** · **`colors_from_picture`** · `render_comparison` · `mesh_slices` · **`tree_skeleton`** · **`tree_template`** · **`tree_roots`** · **`check_sides`** · `blockify_mesh` · `export_roblox`
 
 **Claude Desktop:** add `{"mcpServers": {"blockforge": {"command": "node", "args": ["<folder>/mcp/mcp-server.js"]}}}` to `claude_desktop_config.json`.
 </details>
@@ -131,6 +132,7 @@ Generic slicing turns a tree into a lumpy pile of blocks. When the subject is a 
 Preset **Roblox — House style** (or surface **House**) builds like the game's 50 hand-made trees (measured in `training/STYLE.md`):
 - **Export:** every Part is `SmoothPlastic` + a Roblox **MaterialVariant** from the "2022" pack (`2022 Small Universal` by default, `2022 Small Stud` for trunks/branches/roots, `2022 Weld` for balls; set per part with `variant`), plus **4 Decals** on Front/Back/Left/Right (`rbxassetid://127473043565552`, black, 85 % transparent) for the soft shading. No Studs surfaces. The variants must exist in your place's `MaterialService` (folders with the "2022" pack). In a place without them the parts fall back to plain SmoothPlastic; the decals still show.
 - **Geometry:** free sizes and organic tilts. `roblox_snap` does nothing in this style. Trunks are bent, tapering segments; roots are flat boxes tilted ~38°; each canopy blob is a core box plus 2–6 face plates with the same rotation (the "pillow" look).
+- **Roots:** `tree_roots` adds the game's root recipe around a trunk base: a collar + step, 6 two-part roots (a 45–58° slab plus a ~18° tip on the ground) in uneven directions all around, and knots. `spread` sets how far they reach.
 - **Templates:** `tree_skeleton` lists the closest of the 50 trees (by shape and colors). `tree_template` outlines one or imports it scaled to the scan (`add: true`). They are read from `training/studio-trees/`.
 
 ### 🧊 Which 3D scan model?

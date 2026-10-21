@@ -543,6 +543,27 @@ export const SCAN_TOOLS = [
     },
   },
   {
+    name: 'check_sides',
+    description: 'ALL-SIDES CHECK. The picture shows one side; this checks the others. Compares your model with the 3D scan from front, back, left and right (share of the scan silhouette you cover per side, image), plus depth/width and parts ≤0.15 thick (glitchy strips). Tells you what to fix: a missing back, flat sides, thin strips. render_vs_picture includes the short version.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'tree_roots',
+    description: 'Adds house-style tree roots around a trunk base: collar + step, 6 two-part roots (a 45–58° main slab plus a ~18° tip lying on the ground) in uneven directions all around (-38°, 33°, 90°, -95°, 180°, 140°; 0° = front) and 2 knots, scaled to the trunk width. Get position/width from tree_skeleton (trunk section 1).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        position: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: '[x, z] of the trunk base center (default [0,0])' },
+        trunk_width: { type: 'number', description: 'trunk width at the base in studs (default 2)' },
+        spread: { type: 'number', description: 'root length factor: 1 = the game recipe, 0.6 = short feet, 1.3 = long crawling roots; match the picture' },
+        ground: { type: 'number', description: 'ground height (default 0)' },
+        color: { type: 'string', description: 'trunk color (default #5a3f2e)' },
+        group: { type: 'string', description: 'group name (default "Roots")' },
+        parent: { type: 'string', description: 'parent group, e.g. your tree group' },
+      },
+    },
+  },
+  {
     name: 'tree_template',
     description: 'HOUSE-STYLE TREES. The game\'s 50 hand-made trees (training/studio-trees) as templates. Without file: lists them (size, part count, colors). With file: outlines that tree (groups, parts, sizes, rotations, variants) so you can copy its construction. add: true imports it into the model scaled to `height` (default: the 3D scan\'s height, else its own size) as a starting point; then reshape it to the picture.',
     input_schema: {

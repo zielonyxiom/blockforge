@@ -12,6 +12,7 @@ import { llmReady, llmName, listModels, PROVIDERS } from './llm.js';
 import { imageModelName, canEditImages } from './images.js';
 import { importFolder, runScanQueue, queueSummary } from './batch.js';
 import { treeIndex, loadTemplate, closestTrees, templateParts } from './templates.js';
+import { rootParts, THIN } from './trees.js';
 
 loadConfig();
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
@@ -192,6 +193,45 @@ async function pictureCam() {
   return { url, cam: m.photoCam };
 }
 
+// The picture only shows one side: check the model from the back and the sides too.
+// Coverage = share of the scan's silhouette the model fills from that side.
+async function sidesReport({ image = false } = {}) {
+  const cubes = store.model.parts.filter((p) => p.type === 'cube' && p.visible !== false);
+  if (!cubes.length) throw new Error('The model is empty.');
+  const thin = cubes.filter((p) => Math.min(...p.size) <= THIN);
+  const b = store.bounds();
+  const mw = b.max[0] - b.min[0], md = b.max[2] - b.min[2];
+  const warn = [];
+  let line = '', sheet = null;
+  if (meshInfo()) {
+    const r = await requestBrowser('compare', { views: ['front', 'back', 'left', 'right'] });
+    const c = r.cover;
+    line = `ALL SIDES (share of the scan's silhouette your model covers): front ${c.front.toFixed(2)}, back ${c.back.toFixed(2)}, left ${c.left.toFixed(2)}, right ${c.right.toFixed(2)}.`;
+    if (c.back < 0.8 || c.back < c.front - 0.08) warn.push('the BACK is missing mass: build the far side (mirror the front details z→−z, rotation (rx,ry,rz)→(−rx,−ry,rz), shifted/re-angled 0.2–0.4; or its own decorations), and give blobs back plates');
+    for (const v of ['left', 'right']) if (c[v] < 0.75) warn.push(`the ${v.toUpperCase()} side is thin or empty: add depth (≈0.87× the width), side plates and parts that stick out sideways`);
+    const info = await requestBrowser('mesh_info');
+    if (info?.size) {
+      const mr = md / Math.max(1e-6, mw), sr = info.size[2] / Math.max(1e-6, info.size[0]);
+      line += ` Depth/width: model ${mr.toFixed(2)}, scan ${sr.toFixed(2)}.`;
+      if (mr < sr * 0.85) warn.push(`the model is shallower than the scan (depth/width ${mr.toFixed(2)} vs ${sr.toFixed(2)}): push blobs/parts out to the back and front`);
+    }
+    if (image) line += ' Image: scan vs model from front, back, left, right (RED = scan mass you lack).';
+    if (image) sheet = dataUrlToBuffer(r.image);
+  } else {
+    line = `ALL SIDES: no scan to compare with. Model depth/width ${(md / Math.max(1e-6, mw)).toFixed(2)} (house trees ≈0.87, flat objects ≥0.4). Check render_views back/left/right.`;
+  }
+  // Silhouettes can't see a bare back (it mirrors the front), so also compare where the
+  // small details (flowers, fruit, eyes, knots…) sit: front half vs back half.
+  const mh = b.max[1] - b.min[1];
+  const zs = cubes.map((p) => p.position[2]).sort((p, q) => p - q), midZ = zs[zs.length >> 1]; // median: one big back blob doesn't shift it
+  const small = cubes.filter((p) => Math.max(...p.size) <= 0.2 * mh);
+  const front = small.filter((p) => p.position[2] > midZ + 0.15 * md).length, back = small.filter((p) => p.position[2] < midZ - 0.15 * md).length;
+  if (front >= 3 && back < front / 2) warn.push(`small details sit on the FRONT only (${front} in front, ${back} at the back): add the back's own details (mirrored and shifted, or new ones)`);
+  if (md < 0.4 * mw) warn.push('the model is flat: depth should be ≥0.4× the width (≈0.87× for canopies and thick objects)');
+  if (thin.length) warn.push(`${thin.length} part(s) are ≤${THIN} thick and read as glitchy strips: ${thin.slice(0, 8).map((p) => p.name).join(', ')}${thin.length > 8 ? '…' : ''} — make them chunkier or delete them`);
+  return { image: sheet, text: `${line}${warn.length ? '\nFIX: ' + warn.join('; ') + '.' : ' All sides look filled.'} Look at render_views back/left/right for details the silhouette can't show (empty or flat faces).` };
+}
+
 // Runs any editor tool (model + render + scan). Returns { text, image? }.
 async function runTool(name, input = {}) {
   switch (name) {
@@ -278,10 +318,22 @@ async function runTool(name, input = {}) {
       const pic = await pictureCam();
       if (!pic) throw new Error('render_vs_picture needs a 3D scan made from the picture (it uses the background-free cut-out). Run the 3D scan step first.');
       const r = await requestBrowser('picture_compare', { url: pic.url, cam: pic.cam });
+      const sides = await sidesReport().catch(() => null);
       return {
         image: dataUrlToBuffer(r.image),
-        text: `Model vs your picture, same camera. IoU ${r.iou.toFixed(2)} (1.0 = identical silhouette). RED = in the picture but missing from the model → add/extend. BLUE = in the model but not in the picture → shrink/move/remove. Also compare stud counts per face, part edges and colors directly.`,
+        text: `Model vs your picture, same camera. IoU ${r.iou.toFixed(2)} (1.0 = identical silhouette). RED = in the picture but missing from the model → add/extend. BLUE = in the model but not in the picture → shrink/move/remove. Also compare stud counts per face, part edges and colors directly.` +
+          (sides ? `\n${sides.text}` : ''),
       };
+    }
+    case 'check_sides': {
+      const sides = await sidesReport({ image: true });
+      return { image: sides.image, text: sides.text };
+    }
+    case 'tree_roots': {
+      const group = store.uniqueName(input.group || 'Roots');
+      const parts = rootParts({ position: input.position, ground: input.ground ?? 0, trunkWidth: input.trunk_width || 2, spread: input.spread || 1, color: input.color, group, parent: input.parent });
+      store.exec({ op: 'add_parts', parts }, 'tool');
+      return { text: `Added roots in group "${group}": collar + step, 6 two-part roots (directions -38°, 33°, 90°, -95°, 180°, 140°; 45–58° main slabs with ~18° tips on the ground) and 2 knots (${parts.length - 1} parts). Trunk width ${input.trunk_width || 2}.` };
     }
     case 'polish_model': {
       if (!meshInfo()) throw new Error('polish_model needs a 3D scan (run the 3D scan step first).');

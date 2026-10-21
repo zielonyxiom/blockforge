@@ -138,6 +138,7 @@ export const SCAN_GUIDE = `## 3D scan (you have one)
 A 3D reconstruction of the reference (made on Hugging Face with TRELLIS / Hunyuan3D) is loaded and aligned to the editor space: it stands on y=0, faces +Z, is centered on x=0/z=0 and is scaled to the target height. It is the most reliable source for PROPORTIONS and placement; the reference images are the source for STYLE, clean block shapes, colors and small details (scans are lumpy and can blur thin parts).
 - Start with mesh_slices (axis y, then x or z) to get exact extents of legs, torso, neck, head, tail, accessories. Put your parts there.
 - After blocking out, call render_comparison. Red = scan mass you are missing, blue = your excess. Drive the average IoU up (≥ 0.8 is good for blocky stylization; don't chase noise from the scan's lumps).
+- The scan has a real back and sides. Use it (check_sides) so the model's far side and depth are as complete as the front.
 - blockify_mesh can drop a voxel version of the scan into a "Blockout" group as a placement guide; delete that group before you finish unless the user wants a voxel look.`;
 
 // Appended when the model is built from a picture (the user's image is the ground truth).
@@ -148,7 +149,13 @@ The user's picture is the ground truth. The 3D scan only helps with depth and pl
 - Keep tilted parts tilted at the same angle (branches at 30–45°, leaves, fins). Use rotation, not staircases.
 - Copy each part's color from the picture (nearest BrickColor); keep the light/dark variants the picture has.
 - Coarse to fine: big masses first, then secondary boxes, then small details.
-- After every batch of changes call render_vs_picture and fix the RED (missing) and BLUE (extra) areas. Aim for IoU ≥ 0.85, then keep going on details the silhouette can't show (colors, stud counts, small parts).`;
+- After every batch of changes call render_vs_picture and fix the RED (missing) and BLUE (extra) areas. Aim for IoU ≥ 0.85, then keep going on details the silhouette can't show (colors, stud counts, small parts).
+- ALL SIDES, NOT JUST THE FRONT. The picture shows one side, but in the game the model is seen from all around. Build the back, left and right with the same detail as the front:
+  - Depth ≈ 0.87× the width for thick objects and canopies (0.71–0.95). Flat objects (a donut, a fish fluke, a sign) can be thinner, but stay ≥ 0.4× the width. The scan shows the real depth.
+  - Back = the other side of what the picture shows. Mirror the front details across the center plane (z → −z, rotation (rx, ry, rz) → (−rx, −ry, rz)) and shift some 0.2–0.4 or re-angle them so it isn't a copy. If the object looks the same all around (donut, fruit, canopy), give the back its own decorations with different positions, angles and colors.
+  - Things stick out on the left and right too (blobs, fins, branches), not only in the picture plane.
+  - render_vs_picture also reports how much of the scan's back/left/right silhouette you cover. Fix every "FIX:" it lists, and look at render_views back/left/right (or check_sides) before you finish: no empty or flat faces.
+- Keep details chunky. No strips ≤ 0.15 thick (thin lines, grooves): they read as glitches.`;
 
 // Appended when the subject is a tree / bush / plant (tree mode).
 export const isTreeSubject = (subject) =>
@@ -163,24 +170,31 @@ Trees are a trunk skeleton plus a few big canopy blocks — don't slice them lik
 5. COUNT STUDS per leaf block in the picture: a block face showing 6 studs across and 2 rows is 6 wide × 2 tall (heights: 1.2 per brick row). Match the picture's count, even if the scan's box is a stud bigger or smaller.
 6. Accents (flowers, fruit, light leaf plates) are small boxes/balls on the canopy surface at the given centers, in their own color.
 7. Colors: wood_color for trunk/branches, each cluster's color for its blocks (keep the darker/lighter shades the picture shows), then colors_from_picture.
-8. Checks: render_vs_picture after the trunk+branches+canopy pass, fix RED/BLUE, then polish_model. If you run roblox_snap mode "studs", pass keep_tilt: true so branches keep their angle.`;
+8. ALL SIDES: canopy blocks have depth (≈0.87× their width) and blocks/flowers on the back and sides too. Roots go all around the base (tree_roots builds a ready set), not only toward the camera.
+9. Checks: render_vs_picture after the trunk+branches+canopy pass, fix RED/BLUE and the all-sides FIX lines, then check_sides and polish_model. If you run roblox_snap mode "studs", pass keep_tilt: true so branches keep their angle.`;
 
 // Tree mode in the house style (measured on the game's 50 hand-made trees, training/STYLE.md).
 // Replaces steps 2–5 of TREE_RULES; the skeleton numbers still give placement.
 export const HOUSE_TREE_RULES = `## Tree mode (the subject is a tree) — HOUSE STYLE
 Build it the way the game's own 50 trees are built. tree_skeleton gives the placement, and tree_template the closest hand-made tree.
 1. Call tree_skeleton FIRST (trunk axis, branch segments, canopy clusters, colors). It also lists the closest house trees. Look at the best one with tree_template (file) to copy its proportions and part counts. tree_template with add: true imports it scaled to the scan as a starting point, if it is close.
-2. TRUNK = 3–8 stacked SEGMENTS (Group "Trunk"), square-ish boxes ~2.2 long (length ≈ 2.3 × width), each ~0.94× as wide as the one below (base 1.5–3 wide, top 0.4–1). Each one is rotated 5–25° relative to the one below so the trunk BENDS along the skeleton axis. Segments overlap 10–30% of their length (no gaps). variant "2022 Small Stud".
-3. ROOTS (when the picture has them): 2–6 flat boxes (~1.6 × 1.3 × 3.4) around the base, tilted ~38° outward, every ~90° of yaw (X or + pattern). Or a wide flat base slab / 2–3 slabs stepping inward.
+2. TRUNK = 3–8 stacked SEGMENTS (Group "Trunk"), square-ish boxes ~2.2 long (length ≈ 2.3 × width), each ~0.94× as wide as the one below (base 1.5–3 wide, top 0.4–1). Each one is rotated 5–25° relative to the one below so the trunk BENDS along the skeleton axis. Segments overlap 10–30% of their length (no gaps). variant "2022 Small Stud". Leave at least ~0.4× the tree height of bare trunk between the root collar and the canopy so the roots read (e.g. 4 segments of ~2.3 for a 19-stud tree).
+3. ROOTS by default on every trunk, unless the picture clearly shows something else at the base (a pot, a fish head, a stepped slab). Call tree_roots with the trunk base center and width. It builds the game's recipe:
+   - a collar (~1.25× the trunk width, 0.9× tall, yaw 3–5°) with a thinner step on top (~1.1×, 0.6 tall, yaw −6°);
+   - 5–6 two-part roots: a main slab (L 2.3–3.6, thickness 1.0–1.45, width 0.7–1.15 for a ~2-wide trunk) starting inside the trunk high up and running outward/down at 45–58°, plus a thinner ~18° tip lying on the ground;
+   - uneven directions about −38°, 33°, 90°, −95°, 180°, 140° (0° = front), so the base reads from every side. The back root is the longest and steepest;
+   - two small knots, all in the trunk color with "2022 Small Stud".
 4. BRANCHES: a Y-fork at 50–65% of the height is common. Each branch is 2–4 thinner segments (0.4–1.2 wide) following the skeleton segment (tilt 25–60°), ending INSIDE a canopy blob.
 5. CANOPY starts at ~59% of the height and is 1–3 BLOBS (one per canopy cluster). Each blob:
    a. CORE: one big box filling most of the cluster (e.g. 6 × 4 × 6), with ONE rotation (any yaw, 2–15° pitch/roll).
-   b. FACE PLATES: 2–6 thinner boxes with EXACTLY the core's rotation, stuck on its faces (top and bottom first, then front/back, then sides). They are ~1.2 thick (0.55–1.7), cover ~75–85% of the face and stick out ~0.6 beyond it. This stepped "pillow" outline is the signature look, so every blob gets plates.
+   b. FACE PLATES: 2–6 thinner boxes with EXACTLY the core's rotation, stuck on its faces: top and bottom, front AND back, and the sides. They are ~1.2 thick (0.55–1.7), cover ~75–85% of the face and stick out ~0.6 beyond it. This stepped "pillow" outline is the signature look, so every blob gets plates on all its visible sides, not just the front.
+   d. Depth: blobs are about as deep as they are wide (the canopy ≈ 0.87× as deep as wide). Spread the blobs in depth too: one more to the back or side, not all in the picture plane.
    c. Blobs overlap, offset sideways and in height (a big top blob + 1–2 smaller lower side blobs), each with its own yaw/tilt.
    Other canopy types if the picture shows them: tiered slabs shrinking upward (Christmas tree), palm fronds (long thin boards 8 × 0.6 × 1.5 tilted 20–40° down), mushroom caps (stepped slabs), sphere-shaped blobs only for round balls (variant "2022 Weld").
 6. COLORS: one exact color for the whole canopy, a dark saturated trunk (e.g. #5a3f2e). Accents (fruit, flowers, gems) in a strong color; fruit = a small beveled cube (core + 2 slabs) with a stem. The gradient decals do the shading, so don't paint shades by hand.
-7. Sizes are free and parts are tilted. NEVER call roblox_snap. Typical part count 25–175 (median 56).
-8. Checks: render_vs_picture, fix RED/BLUE, polish_model, colors_from_picture, export_roblox (writes SmoothPlastic + MaterialVariant + 4 gradient decals per part).`;
+7. Sizes are free and parts are tilted. NEVER call roblox_snap. Typical part count 25–175 (median 56). Keep details chunky: no strips ≤ 0.15 thick.
+8. BACK AND SIDES get the same detail as the front: fruit/flowers/gems on the back of the canopy too (different positions), plates on every blob side, roots all around.
+9. Checks: render_vs_picture (front + the all-sides numbers), fix RED/BLUE and every FIX line, then check_sides / render_views back, left, right. Then polish_model, colors_from_picture and export_roblox (writes SmoothPlastic + MaterialVariant + 4 gradient decals per part).`;
 
 export const treeRules = (presetId) => (presetId === 'roblox_house' ? HOUSE_TREE_RULES : TREE_RULES);
 
@@ -218,5 +232,6 @@ export function reviewMessage(roundsLeft) {
 - position/size/angle of each part (head, neck, limbs, tail, accessories)
 - colors and color boundaries
 - missing or extra details
+- the BACK and the sides: is the far side as detailed as the front, is the depth right, any flat or empty faces?
 List the concrete differences you see, then fix them with tools. Call render_views again to verify, and call finish when it matches. (${roundsLeft} review round(s) left after this one.)`;
 }
