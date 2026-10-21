@@ -219,6 +219,40 @@ async function runTool(name, input = {}) {
       store.exec({ op: 'add_parts', parts }, 'tool');
       return { text: `Added ${r.parts.length} blocks in group "${group}" (voxel ${r.voxel} studs, grid ${r.grid.join('×')}, palette ${r.palette.join(' ')}).` };
     }
+    case 'tree_skeleton': {
+      const res = Math.min(64, Math.max(24, Math.round(input.res || 48)));
+      const t = await requestBrowser('tree_skeleton', { res, clusters: Math.max(0, Math.round(input.clusters || 0)) }, 120000);
+      const v3 = (a) => `[${a.join(', ')}]`;
+      const bc = (h) => `${h} (${nearestBrickColor(h).name})`;
+      const lines = [
+        `Tree skeleton of the 3D scan (voxel ${t.voxel} studs, grid ${t.grid.join('×')}, height ${t.height} studs). Wood/leaf split by ${t.split === 'color' ? 'color' : 'shape (wood and leaves have the same color)'}: wood ${bc(t.wood_color)}, leaves ${bc(t.leaf_color)}.${t.ground ? ` Ignored a ${t.ground}-stud ground plate under the scan (not part of the tree).` : ''}`,
+        `TRUNK AXIS (center x,z per height; visible trunk ends at y ${t.trunk_top}):`,
+        ...t.axis.map((a) => `  y ${a.y}: center ${v3(a.center)}, ${a.width} × ${a.depth}`),
+        `TRUNK SECTIONS (build each as one box, bottom to top):`,
+        ...t.trunk.map((s, i) => `  ${i + 1}. y ${s.min[1]}–${s.max[1]}: position ${v3(s.center)}, size ${v3(s.size)}`),
+        `BRANCHES/ROOTS (${t.branches.length}; one rotated box each, Y axis from start to end):`,
+        ...t.branches.map((b, i) => `  ${i + 1}. ${b.kind} start ${v3(b.start)} → end ${v3(b.end)}, length ${b.length}, thick ${b.thickness}, tilt ${b.tilt_deg}° → box position ${v3(b.box.position)} size ${v3(b.box.size)} rotation ${v3(b.box.rotation)}`),
+        `CANOPY CLUSTERS (${t.canopy.length}; 1–3 boxes each, fill = how box-like it is):`,
+        ...t.canopy.map((c, i) => `  ${i + 1}. min ${v3(c.min)} max ${v3(c.max)} → position ${v3(c.center)} size ${v3(c.size)}, fill ${c.fill}, color ${bc(c.color)}`),
+        t.accents.length ? `ACCENTS (flowers/fruit/light plates; ${t.accents.length}):` : 'ACCENTS: none found.',
+        ...t.accents.map((a) => `  center ${v3(a.center)} size ${v3(a.size)} color ${bc(a.color)}`),
+      ];
+      if (input.add) {
+        const g = store.uniqueName('Tree');
+        const parts = [{ kind: 'group', name: g, pivot: [0, 0, 0] },
+          { kind: 'group', name: `${g}_Trunk`, parent: g, pivot: [0, 0, 0] },
+          { kind: 'group', name: `${g}_Branches`, parent: g, pivot: [0, 0, 0] },
+          { kind: 'group', name: `${g}_Canopy`, parent: g, pivot: [0, 0, 0] },
+          ...t.trunk.map((s, i) => ({ name: `Trunk_${i + 1}`, parent: `${g}_Trunk`, position: s.center, size: s.size, color: t.wood_color })),
+          ...t.branches.map((b, i) => ({ name: `${b.kind === 'root' ? 'Root' : 'Branch'}_${i + 1}`, parent: `${g}_Branches`, ...b.box, color: t.wood_color })),
+          ...t.canopy.map((c, i) => ({ name: `Canopy_${i + 1}`, parent: `${g}_Canopy`, position: c.center, size: c.size, color: c.color })),
+          ...t.accents.map((a, i) => ({ name: `Accent_${i + 1}`, parent: `${g}_Canopy`, position: a.center, size: a.size, color: a.color })),
+        ];
+        store.exec({ op: 'add_parts', parts }, 'tool');
+        lines.push(`Added a draft in group "${g}" (${parts.length - 4} boxes). Refine it against the picture: stud counts, layered canopy slabs, branch angles.`);
+      }
+      return { text: lines.join('\n') };
+    }
     case 'render_vs_picture': {
       const pic = await pictureCam();
       if (!pic) throw new Error('render_vs_picture needs a 3D scan made from the picture (it uses the background-free cut-out). Run the 3D scan step first.');
@@ -475,7 +509,7 @@ const routes = {
     startJob('3D scan', (signal) => generateScan(ctx, signal));
     return { ok: true };
   },
-  'POST /api/gen/mesh': async () => { await generateScan(ctx); return { mesh: meshInfo() }; },
+  'POST /api/gen/mesh': async (b) => { await generateScan(ctx, undefined, { backend: b.backend || undefined }); return { mesh: meshInfo() }; },
 
   // Projects
   'GET /api/projects': () => ({ projects: listProjects(), current: project?.slug }),

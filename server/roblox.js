@@ -126,7 +126,7 @@ Rendered like an old Roblox Studio screenshot with bright even lighting on a pla
 - Material: Plastic for everything (Neon only for glowing eyes/lights). Top surfaces get studs and bottoms inlets automatically.
 - Sizes: X and Z in WHOLE studs (1, 2, 3, 4…). Height Y in classic FormFactor steps: plate 0.4, symmetric 1.0, brick 1.2 (multiples allowed: 0.8, 2.4, 3.6…).
 - Positions on the stud grid: X/Z edges land on whole studs (odd width → center on .5, even width → center on a whole number); stack heights in 0.4 increments.
-- Rotations only in 90° steps (use wedges for slopes, never tilted bricks).
+- Rotations only in 90° steps (use wedges for slopes, never tilted bricks) — except tree branches and roots, which are tilted boxes (see Tree mode).
 - Colors: only classic BrickColors (the core list above).
 - No sub-stud details, no offsets of .25/.75; simplify small features into bricks and plates. Think LEGO.
 - Call roblox_snap (mode "studs") before finishing to enforce the grid, sizes and colors.`,
@@ -163,14 +163,22 @@ export const presetOf = (id) => PRESETS[id] || PRESETS[DEFAULT_PRESET];
 // ---------------------------------------------------------------------------
 const roundTo = (v, step) => Math.round(Math.round(v / step) * step * 1000) / 1000;
 
-export function snapModel(model, { mode = 'smooth', colors = true } = {}) {
+// keepTilt: parts/groups rotated off the 90° grid (tree branches, leaning roots) keep their
+// rotation and position; only their size is snapped.
+export function snapModel(model, { mode = 'smooth', colors = true, keepTilt = false } = {}) {
   let changed = 0;
   const palette = mode === 'studs' ? CLASSIC_BRICKCOLORS : BRICKCOLORS;
+  const tilted = (p) => keepTilt && (p.rotation || []).some((r) => Math.abs(r - roundTo(r, 90)) > 1);
   for (const p of model.parts) {
     const before = JSON.stringify(p);
     if (p.type === 'group') {
       p.pivot = p.pivot.map((v) => roundTo(v, mode === 'studs' ? 0.1 : 0.05));
-      if (mode === 'studs') p.rotation = p.rotation.map((r) => roundTo(r, 90));
+      if (mode === 'studs' && !tilted(p)) p.rotation = p.rotation.map((r) => roundTo(r, 90));
+    } else if (mode === 'studs' && tilted(p)) {
+      const [sx, sy, sz] = p.size;
+      p.size = [Math.max(1, Math.round(sx)), Math.max(1, Math.round(sy)), Math.max(1, Math.round(sz))];
+      if (!['neon'].includes(p.material)) p.material = 'plastic';
+      if (colors) p.color = nearestBrickColor(p.color, palette).hex;
     } else {
       if (mode === 'studs') {
         const [sx, sy, sz] = p.size;

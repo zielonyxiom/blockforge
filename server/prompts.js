@@ -150,6 +150,21 @@ The user's picture is the ground truth. The 3D scan only helps with depth and pl
 - Coarse to fine: big masses first, then secondary boxes, then small details.
 - After every batch of changes call render_vs_picture and fix the RED (missing) and BLUE (extra) areas. Aim for IoU ≥ 0.85, then keep going on details the silhouette can't show (colors, stud counts, small parts).`;
 
+// Appended when the subject is a tree / bush / plant (tree mode).
+export const isTreeSubject = (subject) =>
+  /\b(trees?|bush(es)?|shrubs?|oak|pine|palm|birch|willow|maple|cherry blossom|sakura|bonsai|sapling|hedge|plant|drzewo|drzewko|krzak)\b/i.test(String(subject || ''));
+
+export const TREE_RULES = `## Tree mode (the subject is a tree)
+Trees are a trunk skeleton plus a few big canopy blocks — don't slice them like a solid object.
+1. Call tree_skeleton FIRST. It splits the scan into wood (by the trunk's own color, so dark/odd palettes work) and canopy, and returns the trunk axis, trunk sections, branch segments and canopy clusters with exact numbers. Use them for placement; use the picture for counts and colors.
+2. TRUNK = stacked boxes. One box per trunk section (bottom flare / root collar, main shaft, upper shaft…), centered on the axis, sizes in whole studs. Wide flat roots/feet at the base are separate short boxes or wedges, rotated outward. Group: "Trunk".
+3. BRANCHES = ONE rotated box per segment. Use the segment's box.position / box.size / box.rotation (the box's long Y axis runs from start to end; the thickness is its X/Z size). Never build a branch as a staircase of small boxes. Let each branch overlap the trunk and push 0.5–1 stud into the canopy so nothing floats. Group: "Branches".
+4. CANOPY = 1–3 boxes per cluster that fill its bounding box (min/max). Stud style stacks canopy in horizontal LAYERS: a wide lower slab, a slightly narrower/offset upper slab, overlapping, never a smooth dome. Clusters with fill < 0.6 need 2–3 boxes (e.g. a big slab + a smaller one on top or sticking out at a different height). Group: "Canopy".
+5. COUNT STUDS per leaf block in the picture: a block face showing 6 studs across and 2 rows is 6 wide × 2 tall (heights: 1.2 per brick row). Match the picture's count, even if the scan's box is a stud bigger or smaller.
+6. Accents (flowers, fruit, light leaf plates) are small boxes/balls on the canopy surface at the given centers, in their own color.
+7. Colors: wood_color for trunk/branches, each cluster's color for its blocks (keep the darker/lighter shades the picture shows), then colors_from_picture.
+8. Checks: render_vs_picture after the trunk+branches+canopy pass, fix RED/BLUE, then polish_model. If you run roblox_snap mode "studs", pass keep_tilt: true so branches keep their angle.`;
+
 // Appended when the brain is a free model with a tiny request budget.
 export const BUDGET_RULES = `## Request budget (important)
 You run on a free tier: every reply you send costs one request and there are only a few. Work in BIG batches:

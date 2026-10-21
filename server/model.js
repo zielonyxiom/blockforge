@@ -308,7 +308,7 @@ export class ModelStore {
       }
       case 'roblox_snap': {
         const mode = cmd.mode || (isStuds(this.model.style) ? 'studs' : 'smooth');
-        const changed = snapModel(this.model, { mode, colors: cmd.colors !== false });
+        const changed = snapModel(this.model, { mode, colors: cmd.colors !== false, keepTilt: !!cmd.keep_tilt });
         return { mode, changed };
       }
       case 'load_model': {
@@ -468,7 +468,10 @@ export const MODEL_TOOLS = [
     description: 'Clean the whole model up to Roblox rules. mode "studs" (classic): X/Z sizes to whole studs, heights to plate 0.4 / brick-style steps, positions onto the stud grid, rotations to 90°, Plastic material, classic BrickColors. mode "smooth": sizes/positions to a 0.05-stud grid and colors to the nearest BrickColor. Defaults to the model\'s style. Check with a render afterwards.',
     input_schema: {
       type: 'object',
-      properties: { mode: { type: 'string', enum: ['studs', 'smooth'] }, colors: { type: 'boolean', description: 'snap colors to BrickColors (default true)' } },
+      properties: {
+        mode: { type: 'string', enum: ['studs', 'smooth'] }, colors: { type: 'boolean', description: 'snap colors to BrickColors (default true)' },
+        keep_tilt: { type: 'boolean', description: 'studs mode: parts rotated off the 90° grid (tree branches, roots) keep their angle and position; only sizes snap' },
+      },
     },
   },
 ];
@@ -515,6 +518,18 @@ export const SCAN_TOOLS = [
     },
   },
   {
+    name: 'tree_skeleton',
+    description: 'TREE MODE. Analyzes the 3D scan of a tree: splits it into wood (trunk, branches, roots — found by the color of the trunk base, any palette) and canopy, and returns the trunk axis per height, trunk sections (stacked boxes), branch segments (start/end/thickness + a ready rotated box), canopy clusters (bounding boxes + fill + color) and accents (flowers/fruit). add: true also places a draft of those boxes in a "Tree" group.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        res: { type: 'number', description: 'voxels along the longest side (24–64, default 48)' },
+        clusters: { type: 'number', description: 'force this many canopy clusters (default: automatic)' },
+        add: { type: 'boolean', description: 'also add the draft boxes to the model (group "Tree")' },
+      },
+    },
+  },
+  {
     name: 'blockify_mesh',
     description: 'Automatically convert the 3D scan into colored voxel blocks (greedy-merged boxes) inside a new group "Blockout". Fast, accurate silhouette but not clean/intentional. Use as a starting point or reference you then replace with clean parts (delete the Blockout group when done), or keep at low resolution for a voxel look.',
     input_schema: {
@@ -546,7 +561,7 @@ export function runModelTool(store, name, input = {}) {
     case 'duplicate_part': return ok(store.exec({ op: 'duplicate_part', id: input.id, offset: input.offset }, 'tool'));
     case 'clear_model': return ok(store.exec({ op: 'clear_model', name: input.name }, 'tool'));
     case 'set_surface_style': return ok(store.exec({ op: 'set_style', style: input.style }, 'tool'));
-    case 'roblox_snap': return ok(store.exec({ op: 'roblox_snap', mode: input.mode, colors: input.colors }, 'tool'));
+    case 'roblox_snap': return ok(store.exec({ op: 'roblox_snap', mode: input.mode, colors: input.colors, keep_tilt: input.keep_tilt }, 'tool'));
     default: throw new Error(`Unknown tool ${name}`);
   }
 }

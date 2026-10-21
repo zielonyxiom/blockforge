@@ -1098,7 +1098,10 @@ function applyMesh(mesh) {
     return;
   }
   S.meshLoading = meshRef.load(mesh.url, mesh)
-    .then(() => { meshRef.ghost = $('#chkGhost').checked; meshRef.applyGhost(); })
+    .then(() => {
+      meshRef.ghost = $('#chkGhost').checked; meshRef.applyGhost();
+      if (meshRef.groundRemoved) addLog({ kind: 'info', text: `Cut a flat ground plate off the 3D scan (${meshRef.groundRemoved} triangles under the model).`, time: Date.now() });
+    })
     .catch((e) => addLog({ kind: 'error', text: '3D scan failed to load: ' + e.message, time: Date.now() }));
 }
 async function requireMesh() {
@@ -1131,6 +1134,7 @@ async function handleBrowserRequest({ id, op, args = {} }) {
       case 'mesh_info': await requireMesh(); result = meshRef.info(); break;
       case 'slices': await requireMesh(); result = { text: meshRef.slices(args) }; break;
       case 'blockify': await requireMesh(); result = meshRef.blockify(args); break;
+      case 'tree_skeleton': await requireMesh(); result = meshRef.treeSkeleton(args); break;
       case 'export_rbxmx': result = exportRbxmx(S.model, buildModelObject); break;
       default: throw new Error(`Unknown browser op ${op}`);
     }
@@ -1491,7 +1495,8 @@ async function openSettings() {
 
     <h3 style="margin-top:6px">🧊 3D scan (Hugging Face, free)</h3>
     ${field('HF_TOKEN', 'Hugging Face token (free, recommended)', 'password', 'huggingface.co/settings/tokens → New token (Read). Gives far more free GPU time for 3D scans.')}
-    <div class="field"><label class="lbl">3D scan model</label>${select('MESH_BACKEND', [['trellis', 'TRELLIS (fast)'], ['trellis2', 'TRELLIS.2 (detailed)'], ['hunyuan3d', 'Hunyuan3D-2']])}</div>
+    <div class="field"><label class="lbl">3D scan model</label>${select('MESH_BACKEND', [['trellis', 'TRELLIS (fast)'], ['trellis2', 'TRELLIS.2 (detailed)'], ['hunyuan3d', 'Hunyuan3D-2'], ['hunyuan21', 'Hunyuan3D-2.1 (sharpest, best for stud trees; needs HF token + 270 s GPU quota)'], ['sam3d', 'SAM 3D Objects (Meta, needs HF token + 270 s GPU quota)']])}</div>
+    <div data-mesh="sam3d">${field('SAM3D_PROMPT', 'SAM 3D: what to segment', 'text', 'Short noun phrase SAM 3 looks for in the picture, e.g. "object", "tree", "horse".')}</div>
     <p class="muted small">Saved to the .env file in the app folder.</p>
     <div class="actions"><button value="cancel">Cancel</button><button value="save" class="primary">Save</button></div>`,
   async () => {
@@ -1502,8 +1507,10 @@ async function openSettings() {
     const llm = dlgForm.querySelector('[name=LLM_PROVIDER]').value, img = dlgForm.querySelector('[name=IMAGE_PROVIDER]').value;
     dlgForm.querySelectorAll('[data-llm]').forEach((el) => (el.hidden = el.dataset.llm !== llm));
     dlgForm.querySelectorAll('[data-img]').forEach((el) => (el.hidden = el.dataset.img !== img));
+    const mesh = dlgForm.querySelector('[name=MESH_BACKEND]').value;
+    dlgForm.querySelectorAll('[data-mesh]').forEach((el) => (el.hidden = el.dataset.mesh !== mesh));
   };
-  dlgForm.querySelectorAll('[name=LLM_PROVIDER],[name=IMAGE_PROVIDER]').forEach((el) => (el.onchange = sync));
+  dlgForm.querySelectorAll('[name=LLM_PROVIDER],[name=IMAGE_PROVIDER],[name=MESH_BACKEND]').forEach((el) => (el.onchange = sync));
   sync();
   $('#btnLoadModels').onclick = async () => {
     try {
