@@ -2,15 +2,29 @@
 
 # ▣ BlockForge
 
-### Turn a picture into an almost 1:1, stud-style Roblox model.
+### Picture in, Roblox model out: an almost 1:1, stud-style build from real Parts.
 
-Drop in a picture → BlockForge scans it into 3D, rebuilds it out of real Roblox parts, checks itself against your picture from the same camera angle, polishes it automatically, and exports a file you can drag into Roblox Studio.
+[![license](https://img.shields.io/badge/license-MIT-2a78d6?style=flat-square)](LICENSE)
+![windows](https://img.shields.io/badge/Windows-✓-0078d6?style=flat-square)
+![mac](https://img.shields.io/badge/macOS-✓-555?style=flat-square)
+![linux](https://img.shields.io/badge/Linux-✓-555?style=flat-square)
+![free](https://img.shields.io/badge/runs%20on-free%20APIs-1baf7a?style=flat-square)
+![export](https://img.shields.io/badge/export-.rbxmx-e2231a?style=flat-square)
+![mcp](https://img.shields.io/badge/Claude-MCP%20·%2026%20tools-d97757?style=flat-square)
 
-![license](https://img.shields.io/badge/license-MIT-blue) ![windows](https://img.shields.io/badge/Windows-%E2%9C%93-0078d6) ![mac](https://img.shields.io/badge/macOS-%E2%9C%93-lightgrey) ![linux](https://img.shields.io/badge/Linux-%E2%9C%93-yellow) ![free](https://img.shields.io/badge/runs%20on-free%20APIs-brightgreen) ![export](https://img.shields.io/badge/export-Roblox%20Studio%20.rbxmx-red)
-
-![BlockForge demo model](docs/demo-views.jpg)
+**[Install](#️-download--install) · [Free keys](#-free-keys-2-minutes) · [Use it](#-how-to-use) · [Claude Code](#-best-quality-build-with-claude-code) · [How it works](#-how-the-almost-11-works) · [Troubleshooting](#️-troubleshooting)**
 
 </div>
+
+Drop in a picture. BlockForge scans it into 3D, rebuilds it out of real Roblox parts, checks itself against your picture from the same camera angle, polishes the build automatically and exports a file you can drag into Roblox Studio.
+
+| | |
+|---|---|
+| 🧊 **Free 3D scans** | TRELLIS, TRELLIS.2 and Hunyuan3D-2 on Hugging Face, with background removal |
+| 🎯 **Self-checking** | renders the model from your picture's camera; red = missing, blue = extra, plus a score |
+| ✨ **Auto-polish** | optimizes every part against the picture and 5 scan views |
+| 🟥 **Roblox-native** | stud scale, BrickColors, 21 materials, anchored Parts and WedgeParts in named Models |
+| 🤖 **Claude Code** | 26 MCP tools: Claude drives the editor, no API key needed |
 
 ---
 
@@ -116,16 +130,29 @@ Keep BlockForge open, start a **new** Claude Code session and say:
 
 ## 🎯 How the "almost 1:1" works
 
-1. **Cut out** the subject so floors and skies never end up in the model.
-2. **3D scan** the cut-out. BlockForge fixes TRELLIS's linear-color texture so colors stay true.
-3. **Match the camera** — renders the scan at many angles and lens widths until its silhouette matches your picture (typically 0.90+), then turns the scan so your picture's view is the model's front.
-4. **Measure** — `mesh_slices` gives exact extents per height; stud counting gives exact part sizes.
-5. **Build** with real Roblox parts, keeping tilted parts tilted.
-6. **Verify** with *Vs picture* from the matched camera.
-7. **Auto-polish** — a local optimizer moves/resizes/tilts every part to maximize the match with your picture (weighted highest) and the scan's front, back, left, right and top, with a penalty for drifting from a clean design.
-8. **Colors** — each material gets its real lit color from your picture; tiny details keep their designed colors.
+<p align="center"><img src="docs/pipeline.svg" alt="Pipeline: picture, cut out, 3D scan, match camera, build, auto-polish, export" width="100%"></p>
 
----
+1. **Cut out** the subject so floors and skies never end up in the model.
+2. **3D scan** the cut-out (TRELLIS / TRELLIS.2 / Hunyuan3D-2). BlockForge fixes TRELLIS's linear-color texture so colors stay true.
+3. **Match the camera.** It renders the scan at many angles and lens widths until the silhouette matches your picture (typically 0.90+).
+4. **Measure.** `mesh_slices` gives exact extents per height; stud counting gives exact part sizes.
+5. **Build** with real Roblox parts, keeping tilted parts tilted.
+6. **Auto-polish.** A local optimizer moves, resizes and tilts every part to maximize the match with your picture (weighted highest) and with the scan's front, back, left, right and top, with a penalty for drifting from a clean design.
+7. **Colors.** Each material gets its real lit color from your picture.
+
+### 📊 Measured
+
+<p align="center"><img src="docs/chart-match.svg" alt="Silhouette match with the picture: classic studs 0.86, house style 0.90, house style all sides 0.88, hand-tuned build 0.89" width="100%"></p>
+<p align="center"><img src="docs/chart-sides.svg" alt="Coverage from every side: front 88%, back 97%, left 96%, right 96%" width="100%"></p>
+
+| Build | Front IoU | Notes |
+|---|---|---|
+| Classic studs | 0.85–0.86 | integer sizes, 90° rotations, Studs surfaces |
+| House style | **0.90** | free sizes, organic tilts, 2022 MaterialVariants |
+| House style, all sides | 0.88 | full depth, detailed back, roots (back 0.97 · left 0.96 · right 0.96) |
+| Hand-tuned (Claude + Roblox Studio MCP) | 0.89 | after 3 fix passes from 0.855 |
+
+> The "house style", all-sides checks and the extra scan backends are in review in [#1](https://github.com/zielonyxiom/blockforge/pull/1).
 
 ## 🛠️ Troubleshooting
 

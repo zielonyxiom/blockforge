@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 308" width="760" height="308" role="img" aria-label="Silhouette match with the picture">
+<style>
+  .bg{fill:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.t3{fill:#7a7975}.grid{stroke:#e4e3df}.base{stroke:#b9b8b3}
+  .bar{fill:#2a78d6}.track{fill:#eef0f2}.box{fill:#ffffff;stroke:#d6d5d0}.acc{fill:#2a78d6}.arrow{stroke:#9b9a95;fill:none}
+  text{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#1a1a19}.t1{fill:#f0efec}.t2{fill:#c3c2b7}.t3{fill:#9a998f}.grid{stroke:#33332f}.base{stroke:#57564f}
+    .bar{fill:#3987e5}.track{fill:#262624}.box{fill:#232322;stroke:#3d3d39}.acc{fill:#3987e5}.arrow{stroke:#77766e}}
+</style>
+<rect class="bg" width="760" height="308" rx="12"/>
+<text class="t1" x="24" y="34" font-size="18" font-weight="600">Silhouette match with the picture</text>
+<text class="t2" x="24" y="56" font-size="13">Front IoU between the model rendered from the picture’s camera and the picture (1.0 = identical)</text>
+<line class="grid" x1="250.0" x2="250.0" y1="72" y2="262" stroke-width="1"/>
+<text class="t3" x="250.0" y="282" font-size="11" text-anchor="middle">0.50</text>
+<line class="grid" x1="360.0" x2="360.0" y1="72" y2="262" stroke-width="1"/>
+<text class="t3" x="360.0" y="282" font-size="11" text-anchor="middle">0.62</text>
+<line class="grid" x1="470.0" x2="470.0" y1="72" y2="262" stroke-width="1"/>
+<text class="t3" x="470.0" y="282" font-size="11" text-anchor="middle">0.75</text>
+<line class="grid" x1="580.0" x2="580.0" y1="72" y2="262" stroke-width="1"/>
+<text class="t3" x="580.0" y="282" font-size="11" text-anchor="middle">0.88</text>
+<line class="grid" x1="690.0" x2="690.0" y1="72" y2="262" stroke-width="1"/>
+<text class="t3" x="690.0" y="282" font-size="11" text-anchor="middle">1.00</text>
+<text class="t1" x="236" y="102" font-size="13" text-anchor="end">Classic studs</text>
+<text class="t3" x="236" y="117" font-size="11" text-anchor="end">integer sizes, 90° turns</text>
+<path class="bar" d="M250 90 h308.4 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-308.4 z"><title>Classic studs: 0.85</title></path>
+<text class="t1" x="570.4" y="105" font-size="13" font-weight="600">0.85</text>
+<text class="t1" x="236" y="148" font-size="13" text-anchor="end">House style</text>
+<text class="t3" x="236" y="163" font-size="11" text-anchor="end">free sizes, organic tilts</text>
+<path class="bar" d="M250 136 h348.0 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-348.0 z"><title>House style: 0.90</title></path>
+<text class="t1" x="610.0" y="151" font-size="13" font-weight="600">0.90</text>
+<text class="t1" x="236" y="194" font-size="13" text-anchor="end">House style, all sides</text>
+<text class="t3" x="236" y="209" font-size="11" text-anchor="end">full depth, back + roots</text>
+<path class="bar" d="M250 182 h330.4 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-330.4 z"><title>House style, all sides: 0.88</title></path>
+<text class="t1" x="592.4" y="197" font-size="13" font-weight="600">0.88</text>
+<text class="t1" x="236" y="240" font-size="13" text-anchor="end">Hand-tuned build</text>
+<text class="t3" x="236" y="255" font-size="11" text-anchor="end">Claude + Studio MCP, 3 passes</text>
+<path class="bar" d="M250 228 h341.8 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-341.8 z"><title>Hand-tuned build: 0.89</title></path>
+<text class="t1" x="603.8" y="243" font-size="13" font-weight="600">0.89</text>
+<line class="base" x1="250" x2="250" y1="72" y2="262" stroke-width="1.5"/>
+</svg>

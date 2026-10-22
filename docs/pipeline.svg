@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 190" width="1040" height="190" role="img" aria-label="BlockForge pipeline">
+<style>
+  .bg{fill:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.t3{fill:#7a7975}.grid{stroke:#e4e3df}.base{stroke:#b9b8b3}
+  .bar{fill:#2a78d6}.track{fill:#eef0f2}.box{fill:#ffffff;stroke:#d6d5d0}.acc{fill:#2a78d6}.arrow{stroke:#9b9a95;fill:none}
+  text{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#1a1a19}.t1{fill:#f0efec}.t2{fill:#c3c2b7}.t3{fill:#9a998f}.grid{stroke:#33332f}.base{stroke:#57564f}
+    .bar{fill:#3987e5}.track{fill:#262624}.box{fill:#232322;stroke:#3d3d39}.acc{fill:#3987e5}.arrow{stroke:#77766e}}
+</style>
+<rect class="bg" width="1040" height="190" rx="12"/>
+<text class="t1" x="24" y="34" font-size="18" font-weight="600">How a picture becomes a model</text>
+<rect class="box" x="20.0" y="58" width="124" height="96" rx="10" stroke-width="1"/>
+<rect class="acc" x="34.0" y="72" width="22" height="22" rx="5"/>
+<text x="45.0" y="88" font-size="12" font-weight="700" text-anchor="middle" fill="#ffffff">1</text>
+<text class="t1" x="34.0" y="114" font-size="13.5" font-weight="600">Picture</text>
+<text class="t2" x="34.0" y="131" font-size="11">render, AI image,</text>
+<text class="t2" x="34.0" y="145" font-size="11">screenshot</text>
+<path class="arrow" d="M147.0 106.0 h14 m-5 -4 l5 4 l-5 4" stroke-width="1.6"/>
+<rect class="box" x="166.0" y="58" width="124" height="96" rx="10" stroke-width="1"/>
+<rect class="acc" x="180.0" y="72" width="22" height="22" rx="5"/>
+<text x="191.0" y="88" font-size="12" font-weight="700" text-anchor="middle" fill="#ffffff">2</text>
+<text class="t1" x="180.0" y="114" font-size="13.5" font-weight="600">Cut out</text>
+<text class="t2" x="180.0" y="131" font-size="11">BRIA RMBG-2.0</text>
+<path class="arrow" d="M293.0 106.0 h14 m-5 -4 l5 4 l-5 4" stroke-width="1.6"/>
+<rect class="box" x="312.0" y="58" width="124" height="96" rx="10" stroke-width="1"/>
+<rect class="acc" x="326.0" y="72" width="22" height="22" rx="5"/>
+<text x="337.0" y="88" font-size="12" font-weight="700" text-anchor="middle" fill="#ffffff">3</text>
+<text class="t1" x="326.0" y="114" font-size="13.5" font-weight="600">3D scan</text>
+<text class="t2" x="326.0" y="131" font-size="11">TRELLIS · TRELLIS.2</text>
+<text class="t2" x="326.0" y="145" font-size="11">Hunyuan3D</text>
+<path class="arrow" d="M439.0 106.0 h14 m-5 -4 l5 4 l-5 4" stroke-width="1.6"/>
+<rect class="box" x="458.0" y="58" width="124" height="96" rx="10" stroke-width="1"/>
+<rect class="acc" x="472.0" y="72" width="22" height="22" rx="5"/>
+<text x="483.0" y="88" font-size="12" font-weight="700" text-anchor="middle" fill="#ffffff">4</text>
+<text class="t1" x="472.0" y="114" font-size="13.5" font-weight="600">Match camera</text>
+<text class="t2" x="472.0" y="131" font-size="11">angle + lens</text>
+<text class="t2" x="472.0" y="145" font-size="11">from silhouette</text>
+<path class="arrow" d="M585.0 106.0 h14 m-5 -4 l5 4 l-5 4" stroke-width="1.6"/>
+<rect class="box" x="604.0" y="58" width="124" height="96" rx="10" stroke-width="1"/>
+<rect class="acc" x="618.0" y="72" width="22" height="22" rx="5"/>
+<text x="629.0" y="88" font-size="12" font-weight="700" text-anchor="middle" fill="#ffffff">5</text>
+<text class="t1" x="618.0" y="114" font-size="13.5" font-weight="600">Build</text>
+<text class="t2" x="618.0" y="131" font-size="11">real Roblox parts</text>
+<text class="t2" x="618.0" y="145" font-size="11">Claude / Gemini</text>
+<path class="arrow" d="M731.0 106.0 h14 m-5 -4 l5 4 l-5 4" stroke-width="1.6"/>
+<rect class="box" x="750.0" y="58" width="124" height="96" rx="10" stroke-width="1"/>
+<rect class="acc" x="764.0" y="72" width="22" height="22" rx="5"/>
+<text x="775.0" y="88" font-size="12" font-weight="700" text-anchor="middle" fill="#ffffff">6</text>
+<text class="t1" x="764.0" y="114" font-size="13.5" font-weight="600">Auto-polish</text>
+<text class="t2" x="764.0" y="131" font-size="11">picture + 5 scan</text>
+<text class="t2" x="764.0" y="145" font-size="11">views optimizer</text>
+<path class="arrow" d="M877.0 106.0 h14 m-5 -4 l5 4 l-5 4" stroke-width="1.6"/>
+<rect class="box" x="896.0" y="58" width="124" height="96" rx="10" stroke-width="1"/>
+<rect class="acc" x="910.0" y="72" width="22" height="22" rx="5"/>
+<text x="921.0" y="88" font-size="12" font-weight="700" text-anchor="middle" fill="#ffffff">7</text>
+<text class="t1" x="910.0" y="114" font-size="13.5" font-weight="600">Export</text>
+<text class="t2" x="910.0" y="131" font-size="11">.rbxmx · GLB · OBJ</text>
+</svg>
