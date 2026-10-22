@@ -68,7 +68,7 @@ Click **Settings** in the app and paste:
 - 🟥 **Roblox rules built in** — stud scale, one primitive = one Part, BrickColors, 21 Roblox materials, rig-ready groups. Styles: **Smooth (modern)**, **Studs (classic)**, **Stylized low-poly (trending)**, **House (2022 variants)**; surfaces: **Smooth / Studs on top / Studs everywhere / House**.
 - 📦 **Exports to Roblox Studio** (`.rbxmx`: anchored Parts & WedgeParts in named Models, studs surfaces) plus GLB / OBJ / JSON; imports BlockBench `.bbmodel`.
 - 🗂️ **Batch import** — turn a whole folder of pictures into projects; scans run as your free quota allows and resume later.
-- 🤖 **Claude Code integration (MCP)** — Claude drives the editor with 30 tools for the best builds, no API key needed.
+- 🤖 **Claude Code integration (MCP)** — Claude drives the editor with 31 tools for the best builds, no API key needed.
 
 **Measured on test pictures:** silhouette match with the original picture **0.90** for a stud-style fish and a stud-style tree after auto-polish (1.0 = identical). Tree mode on the blue stud tree: **0.88** in the house style with a full back side and roots (Hunyuan3D-2.1 scan, 62 parts; back/left/right 0.96–0.97 covered; 0.90 front-only), **0.86** / **0.85** as classic studs with Hunyuan3D-2.1 / TRELLIS (21 parts).
 
@@ -107,9 +107,9 @@ Keep BlockForge open, start a **new** Claude Code session and say:
 > *Use blockforge: open my project, read the build guide, measure the scan with mesh_slices, count the studs in the picture, build it, run polish_model and colors_from_picture, check with render_vs_picture and fix what's red or blue, then export to Roblox.*
 
 <details>
-<summary>All 30 MCP tools</summary>
+<summary>All 31 MCP tools</summary>
 
-`get_build_guide` · `new_project` · `set_style_preset` · `set_surface_style` · `generate_references` · `generate_part_reference` · `generate_mesh` · `set_mesh_transform` · `list_references` · `view_reference` · `get_model` · `add_parts` · `update_parts` · `delete_parts` · `mirror_part` · `duplicate_part` · `clear_model` · `roblox_snap` · `render_views` · **`render_vs_picture`** · **`polish_model`** · **`colors_from_picture`** · `render_comparison` · `mesh_slices` · **`tree_skeleton`** · **`tree_template`** · **`tree_roots`** · **`check_sides`** · `blockify_mesh` · `export_roblox`
+`get_build_guide` · `new_project` · `set_style_preset` · `set_surface_style` · `generate_references` · `generate_part_reference` · `generate_mesh` · `set_mesh_transform` · `list_references` · `view_reference` · `get_model` · `add_parts` · `update_parts` · `delete_parts` · `mirror_part` · `duplicate_part` · `clear_model` · `roblox_snap` · `render_views` · **`render_vs_picture`** · **`polish_model`** · **`colors_from_picture`** · `render_comparison` · `mesh_slices` · **`tree_skeleton`** · **`tree_template`** · **`tree_roots`** · **`check_sides`** · **`style_check`** · `blockify_mesh` · `export_roblox`
 
 **Claude Desktop:** add `{"mcpServers": {"blockforge": {"command": "node", "args": ["<folder>/mcp/mcp-server.js"]}}}` to `claude_desktop_config.json`.
 </details>
@@ -133,6 +133,7 @@ Preset **Roblox — House style** (or surface **House**) builds like the game's 
 - **Export:** every Part is `SmoothPlastic` + a Roblox **MaterialVariant** from the "2022" pack (`2022 Small Universal` by default, `2022 Small Stud` for trunks/branches/roots, `2022 Weld` for balls; set per part with `variant`), plus **4 Decals** on Front/Back/Left/Right (`rbxassetid://127473043565552`, black, 85 % transparent) for the soft shading. No Studs surfaces. The variants must exist in your place's `MaterialService` (folders with the "2022" pack). In a place without them the parts fall back to plain SmoothPlastic; the decals still show.
 - **Geometry:** free sizes and organic tilts. `roblox_snap` does nothing in this style. Trunks are bent, tapering segments; roots are flat boxes tilted ~38°; each canopy blob is a core box plus 2–6 face plates with the same rotation (the "pillow" look).
 - **Roots:** `tree_roots` adds the game's root recipe around a trunk base: a collar + step, 6 two-part roots (a 45–58° slab plus a ~18° tip on the ground) in uneven directions all around, and knots. `spread` sets how far they reach.
+- **Analyzer:** `node scripts/analyze-trees.mjs` splits every reference tree into roots, collar, trunk segments, branches, canopy blobs (core + face plates) and details, and writes `training/analysis/` (per-tree numbers + house statistics). `style_check` compares your build with those statistics and the root recipe.
 - **Templates:** `tree_skeleton` lists the closest of the 50 trees (by shape and colors). `tree_template` outlines one or imports it scaled to the scan (`add: true`). They are read from `training/studio-trees/`.
 
 ### 🧊 Which 3D scan model?
@@ -143,6 +144,8 @@ Preset **Roblox — House style** (or surface **House**) builds like the game's 
 | `hunyuan3d` | tencent/Hunyuan3D-2 | shape + texture |
 | `hunyuan21` | tencent/Hunyuan3D-2.1 | **sharpest for stud builds** — separate blocks, studs and flowers survive; PBR texture. Takes 2–4 min and asks for **270 s** of ZeroGPU, so it needs an HF token with enough daily quota (anonymous users may not request that much). Its ground shadow comes out as a thin plate, which BlockForge cuts off automatically. |
 | `sam3d` | dev-bjoern/sam3d-objects-mcp | Meta SAM 3 + SAM 3D Objects (the official facebook/sam-3d-objects Space is gated). Segments `SAM3D_PROMPT` (default `object`) in the original picture itself, returns a GLB. Also asks for 270 s of ZeroGPU. Spaces that only return a Gaussian-splat PLY (e.g. fayyazio/sam3d-objects-gradio) are not supported — a splat has no surface to voxelize or texture. |
+
+**No scan?** (GPU quota used up, Space down) `render_vs_picture` still works: the picture is cut out (BRIA, or a local sky/ground flood fill) and its camera is matched against your model once (`rematch: true` to redo). It's less exact than with a scan, because a wrong model can pull the camera a little. Polish still needs a scan.
 
 `generate_mesh` takes an optional `backend` to try another model for one scan without changing Settings.
 

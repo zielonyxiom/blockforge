@@ -511,8 +511,8 @@ export const SCAN_TOOLS = [
   },
   {
     name: 'render_vs_picture',
-    description: 'THE 1:1 CHECK. Renders your model from the same camera angle as the original picture (found automatically) and lines it up with the picture: [your picture | model | difference]. RED = in the picture but missing from the model, BLUE = in the model but not in the picture. Returns IoU vs the picture. Use it after every batch of changes; compare details (stud counts, part edges, colors) directly against the picture.',
-    input_schema: { type: 'object', properties: {} },
+    description: 'THE 1:1 CHECK. Renders your model from the same camera angle as the original picture (found automatically) and lines it up with the picture: [your picture | model | difference]. RED = in the picture but missing from the model, BLUE = in the model but not in the picture. Returns IoU vs the picture. Use it after every batch of changes; compare details (stud counts, part edges, colors) directly against the picture. Works without a 3D scan too: the picture is cut out and its camera is matched against your model once (rematch: true fits it again after big changes).',
+    input_schema: { type: 'object', properties: { rematch: { type: 'boolean', description: 'no-scan mode: match the picture camera to the model again' } } },
   },
   {
     name: 'render_comparison',
@@ -541,6 +541,11 @@ export const SCAN_TOOLS = [
         add: { type: 'boolean', description: 'also add the draft boxes to the model (group "Tree")' },
       },
     },
+  },
+  {
+    name: 'style_check',
+    description: 'HOUSE STYLE CHECK. Analyzes the structure of your model (trunk segments, bare-trunk height, collar, roots and their directions/slope, canopy start, blobs and face plates, footprint, tilted share, details front/back, thin parts) and compares every number with the statistics of the 50 hand-made trees of the game. ✗ lines say what to change.',
+    input_schema: { type: 'object', properties: {} },
   },
   {
     name: 'check_sides',

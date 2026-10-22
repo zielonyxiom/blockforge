@@ -623,16 +623,18 @@ function bboxOf(canvas, test) {
 const maskIoU = (a, b) => { let i = 0, u = 0; for (let k = 0; k < N * N; k++) { if (a.mask[k] || b.mask[k]) u++; if (a.mask[k] && b.mask[k]) i++; } return i / (u || 1); };
 
 // Search yaw/pitch so the scan's silhouette matches the picture's cut-out.
-async function matchPhoto(url) {
-  await requireMesh();
+// subject 'model' (no scan): fit the camera to the model's silhouette instead of the scan's.
+async function matchPhoto(url, subject = 'mesh') {
+  if (subject === 'mesh') await requireMesh();
+  else if (!hasCubes()) throw new Error('the model is empty');
   const ref = normalizedTile(await imageCanvas(url), (d, o) => d[o + 3] > 128);
   // AI pictures often use a wide lens, so the lens (fov) is searched too; otherwise the
   // matcher fakes the perspective with a wrong yaw.
   let best = { yaw: 0, pitch: 10, fov: 30, score: -1 };
   studio(() => {
-    const box = meshBounds();
+    const box = subject === 'mesh' ? meshBounds() : modelBounds();
     const test = (yaw, pitch, fov) => {
-      const t = normalizedTile(shoot({ yaw, pitch, fov }, box, 160, 'mesh', true), (d, o) => d[o] > 128);
+      const t = normalizedTile(shoot({ yaw, pitch, fov }, box, 160, subject, true), (d, o) => d[o] > 128);
       const s = maskIoU(ref, t);
       if (s > best.score) best = { yaw, pitch, fov, score: s };
     };
@@ -644,6 +646,33 @@ async function matchPhoto(url) {
     for (let yaw = b.yaw - 2; yaw <= b.yaw + 2; yaw += 1) for (let pitch = b.pitch - 2; pitch <= b.pitch + 2; pitch += 1) test(yaw, pitch, b.fov);
   });
   return { yaw: best.yaw, pitch: best.pitch, fov: best.fov, score: Math.round(best.score * 1000) / 1000 };
+}
+
+// Fallback cut-out without the AI background remover: flood-fill the background from the
+// picture's border through smooth color changes (sky gradients) and sky/grass-like colors.
+async function localCutout(url) {
+  const c = await imageCanvas(url);
+  const W = c.width, H = c.height, g = c.getContext('2d', { willReadFrequently: true });
+  const img = g.getImageData(0, 0, W, H), d = img.data;
+  const bgLike = (o) => { const r = d[o], gg = d[o + 1], b = d[o + 2]; return (b > r + 25 && b >= gg) || (gg > r + 20 && gg > b + 10) || (r > 225 && gg > 225 && b > 225); };
+  const bg = new Uint8Array(W * H), stack = [];
+  const push = (i) => { if (!bg[i]) { bg[i] = 1; stack.push(i); } };
+  for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+  for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+  while (stack.length) {
+    const i = stack.pop(), x = i % W, y = (i / W) | 0, o = i * 4;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const X = x + dx, Y = y + dy;
+      if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+      const j = Y * W + X, q = j * 4;
+      if (bg[j]) continue;
+      const step = Math.abs(d[q] - d[o]) + Math.abs(d[q + 1] - d[o + 1]) + Math.abs(d[q + 2] - d[o + 2]);
+      if (step < 24 || bgLike(q)) push(j);
+    }
+  }
+  for (let i = 0; i < W * H; i++) if (bg[i]) d[i * 4 + 3] = 0;
+  g.putImageData(img, 0, 0);
+  return c.toDataURL('image/png');
 }
 
 // [your picture | model from the picture's camera | difference]. The model render is lined up
@@ -1153,7 +1182,8 @@ async function handleBrowserRequest({ id, op, args = {} }) {
       case 'compare': await requireMesh(); result = compareSheet(args.views); break;
       case 'yaw_sheet': await requireMesh(); result = { image: yawSheet() }; break;
       case 'auto_orient': await requireMesh(); result = await autoOrient(args.url); break;
-      case 'match_photo': result = await matchPhoto(args.url); break;
+      case 'match_photo': result = await matchPhoto(args.url, args.subject); break;
+      case 'local_cutout': result = { image: await localCutout(args.url) }; break;
       case 'picture_compare': await S.meshLoading; result = await pictureCompare(args.url, args.cam); break;
       case 'polish': result = await polishModel(args); break;
       case 'picture_colors': result = await pictureColors(args); break;

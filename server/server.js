@@ -12,7 +12,11 @@ import { llmReady, llmName, listModels, PROVIDERS } from './llm.js';
 import { imageModelName, canEditImages } from './images.js';
 import { importFolder, runScanQueue, queueSummary } from './batch.js';
 import { treeIndex, loadTemplate, closestTrees, templateParts } from './templates.js';
+import { removeBackground } from './mesh3d.js';
 import { rootParts, THIN } from './trees.js';
+import { analyzeTree, summarize, styleReport } from './analyze.js';
+
+let houseStats = null; // statistics of the game's trees (training/studio-trees), computed once
 
 loadConfig();
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
@@ -174,9 +178,9 @@ async function requestRender(views) {
 }
 
 // The picture's camera (matched once, then cached). Turns the scan so the picture is the front view.
-async function pictureCam() {
+async function pictureCam({ rematch = false } = {}) {
   const m = project.meta.mesh;
-  if (!m?.cutout) return null;
+  if (!m?.cutout) return pictureOnlyCam({ rematch });
   const url = `/projects/${project.slug}/${m.cutout}`;
   if (!m.photoCam) {
     let cam = await requestBrowser('match_photo', { url });
@@ -191,6 +195,37 @@ async function pictureCam() {
     log('info', `Matched the picture's camera: yaw ${cam.yaw}°, pitch ${cam.pitch}°, lens ${cam.fov}° (silhouette match ${cam.score}).`);
   }
   return { url, cam: m.photoCam };
+}
+
+// No 3D scan (no GPU quota, or the scan failed): cut the picture out (BRIA, or a local
+// sky/ground flood fill when that fails) and match its camera against the MODEL once it has
+// parts. Less exact than a scan (a wrong model can pull the camera a little), so the camera
+// is matched once and kept; pass rematch to fit it again after big changes.
+async function pictureOnlyCam({ rematch = false } = {}) {
+  const pic = (project.meta.picture ||= {});
+  if (!pic.cutout) {
+    const refs = ctx.loadRefs(() => true);
+    const ref = refs.find((r) => r.view === 'three_quarter') || refs.find((r) => r.view === 'front') || refs[0];
+    if (!ref) return null;
+    let buf;
+    try { buf = await removeBackground(ref.buf, { log }); }
+    catch (e) {
+      log('info', `Background removal failed (${e.message.slice(0, 100)}); cutting the picture out locally instead.`);
+      const r = await requestBrowser('local_cutout', { url: `/projects/${project.slug}/refs/${ref.file}` });
+      buf = dataUrlToBuffer(r.image);
+    }
+    pic.cutout = ctx.saveProjectFile('cutout.png', buf);
+    saveMeta();
+  }
+  const url = `/projects/${project.slug}/${pic.cutout}`;
+  if (rematch) delete pic.cam;
+  if (!pic.cam) {
+    if (!store.model.parts.some((p) => p.type === 'cube')) throw new Error('Build some parts first: without a 3D scan the picture\'s camera is matched against your model.');
+    pic.cam = await requestBrowser('match_photo', { url, subject: 'model' });
+    saveMeta();
+    log('info', `Matched the picture's camera to your model (no scan): yaw ${pic.cam.yaw}°, pitch ${pic.cam.pitch}°, lens ${pic.cam.fov}° (match ${pic.cam.score}).`);
+  }
+  return { url, cam: pic.cam };
 }
 
 // The picture only shows one side: check the model from the back and the sides too.
@@ -315,8 +350,8 @@ async function runTool(name, input = {}) {
       return { text: `Template ${entry.name} (${entry.extents.join('×')} studs, ${entry.parts} parts, colors ${entry.colors.join(' ')}):\n${outline}` };
     }
     case 'render_vs_picture': {
-      const pic = await pictureCam();
-      if (!pic) throw new Error('render_vs_picture needs a 3D scan made from the picture (it uses the background-free cut-out). Run the 3D scan step first.');
+      const pic = await pictureCam({ rematch: !!input.rematch });
+      if (!pic) throw new Error('render_vs_picture needs the picture: add a reference image first.');
       const r = await requestBrowser('picture_compare', { url: pic.url, cam: pic.cam });
       const sides = await sidesReport().catch(() => null);
       return {
@@ -324,6 +359,17 @@ async function runTool(name, input = {}) {
         text: `Model vs your picture, same camera. IoU ${r.iou.toFixed(2)} (1.0 = identical silhouette). RED = in the picture but missing from the model → add/extend. BLUE = in the model but not in the picture → shrink/move/remove. Also compare stud counts per face, part edges and colors directly.` +
           (sides ? `\n${sides.text}` : ''),
       };
+    }
+    case 'style_check': {
+      if (!houseStats) {
+        const trees = treeIndex().map((t) => analyzeTree(loadTemplate(t.file).model));
+        if (!trees.length) throw new Error('No house trees to compare with: training/studio-trees is missing.');
+        houseStats = summarize(trees);
+      }
+      const a = analyzeTree(store.model);
+      if (!a.parts) throw new Error('The model is empty.');
+      const t = a.trunk, rt = a.roots, cp = a.canopy;
+      return { text: `Structure of your model (${a.parts} parts, ${a.size.join('×')}): trunk ${t.segments} segment(s) ${t.base_width}→${t.top_width} wide, bare trunk ${t.bare_ratio}× height; collar ${a.collar}; roots ${rt.count} part(s) in ${rt.directions} direction(s), slope ${rt.slope_median ?? '–'}°; branches ${a.branches.count}; canopy from ${cp.start_ratio}× height, ${cp.blobs} blob(s), ${cp.plates_per_blob} plates/blob; details ${a.details.count} (front ${a.details.front} / back ${a.details.back}).\nCompared with the game's ${houseStats.parts.n} trees:\n${styleReport(a, houseStats)}` };
     }
     case 'check_sides': {
       const sides = await sidesReport({ image: true });
