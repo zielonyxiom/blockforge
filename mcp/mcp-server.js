@@ -39,7 +39,7 @@ const EXTRA_TOOLS = [
   },
   {
     name: 'generate_mesh',
-    description: 'Turn the main reference image into a textured 3D scan on Hugging Face (~20 s–4 min), auto-aligned to the editor. Unlocks render_comparison, mesh_slices, tree_skeleton and blockify_mesh. backend overrides the Settings choice for this one scan: trellis (fast), trellis2 (detailed), hunyuan3d, hunyuan21 (Hunyuan3D-2.1, sharper; asks for 270 s of ZeroGPU quota), sam3d (Meta SAM 3D Objects; asks for 270 s).',
+    description: 'Turn the main reference image into a textured 3D scan on Hugging Face (~20 s–4 min), auto-aligned to the editor. Unlocks render_comparison, mesh_slices, tree_skeleton and blockify_mesh. backend overrides the Settings choice for this one scan: trellis (fast), trellis2 (detailed), hunyuan3d, hunyuan21 (Hunyuan3D-2.1, sharper; asks for 270 s of ZeroGPU quota), sam3d (Meta SAM 3D Objects; asks for 270 s), comfyui (local ComfyUI Hunyuan3D-2 on your GPU, no quota, shape only; uses back/left/right references too).',
     input_schema: { type: 'object', properties: { backend: { type: 'string', enum: MESH_BACKENDS } } },
   },
   {

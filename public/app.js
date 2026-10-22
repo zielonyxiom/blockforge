@@ -1552,7 +1552,8 @@ async function openSettings() {
 
     <h3 style="margin-top:6px">🧊 3D scan (Hugging Face, free)</h3>
     ${field('HF_TOKEN', 'Hugging Face token (free, recommended)', 'password', 'huggingface.co/settings/tokens → New token (Read). Gives far more free GPU time for 3D scans.')}
-    <div class="field"><label class="lbl">3D scan model</label>${select('MESH_BACKEND', [['trellis', 'TRELLIS (fast)'], ['trellis2', 'TRELLIS.2 (detailed)'], ['hunyuan3d', 'Hunyuan3D-2'], ['hunyuan21', 'Hunyuan3D-2.1 (sharpest, best for stud trees; needs HF token + 270 s GPU quota)'], ['sam3d', 'SAM 3D Objects (Meta, needs HF token + 270 s GPU quota)']])}</div>
+    <div class="field"><label class="lbl">3D scan model</label>${select('MESH_BACKEND', [['trellis', 'TRELLIS (fast)'], ['trellis2', 'TRELLIS.2 (detailed)'], ['hunyuan3d', 'Hunyuan3D-2'], ['hunyuan21', 'Hunyuan3D-2.1 (sharpest, best for stud trees; needs HF token + 270 s GPU quota)'], ['sam3d', 'SAM 3D Objects (Meta, needs HF token + 270 s GPU quota)'], ['comfyui', 'Local ComfyUI — Hunyuan3D-2 on your GPU (no quota, shape only)']])}</div>
+    <div data-mesh="comfyui">${field('COMFYUI_URL', 'ComfyUI address')}${field('COMFYUI_3D_MODEL', 'Hunyuan3D checkpoint', 'text', 'In ComfyUI/models/checkpoints. hunyuan3d-dit-v2-mv-turbo_fp16.safetensors (4.9 GB, multi-view, fits 8 GB GPUs) or hunyuan_3d_v2.1.safetensors (7.4 GB).')}</div>
     <div data-mesh="sam3d">${field('SAM3D_PROMPT', 'SAM 3D: what to segment', 'text', 'Short noun phrase SAM 3 looks for in the picture, e.g. "object", "tree", "horse".')}</div>
     <p class="muted small">Saved to the .env file in the app folder.</p>
     <div class="actions"><button value="cancel">Cancel</button><button value="save" class="primary">Save</button></div>`,

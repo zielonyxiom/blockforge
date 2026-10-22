@@ -26,13 +26,15 @@ export const DEFAULTS = {
   HF_IMAGE_MODEL: 'black-forest-labs/FLUX.1-dev',
   HF_EDIT_MODEL: 'black-forest-labs/FLUX.1-Kontext-dev',
   HF_PROVIDER: 'auto',
-  MESH_BACKEND: 'trellis', // trellis | trellis2 | hunyuan3d | hunyuan21 | sam3d
+  MESH_BACKEND: 'trellis', // trellis | trellis2 | hunyuan3d | hunyuan21 | sam3d | comfyui
   TRELLIS_SPACE: 'trellis-community/TRELLIS',
   TRELLIS2_SPACE: 'microsoft/TRELLIS.2',
   HUNYUAN_SPACE: 'tencent/Hunyuan3D-2',
   HUNYUAN21_SPACE: 'tencent/Hunyuan3D-2.1',
   SAM3D_SPACE: 'dev-bjoern/sam3d-objects-mcp',
   SAM3D_PROMPT: 'object', // what SAM 3 should segment in the picture (short noun phrase)
+  COMFYUI_URL: 'http://127.0.0.1:8188', // local ComfyUI for the comfyui scan backend
+  COMFYUI_3D_MODEL: 'hunyuan3d-dit-v2-mv-turbo_fp16.safetensors', // in ComfyUI/models/checkpoints
   // "Brain" for planning/building: anthropic | gemini | openai | openrouter | ollama
   LLM_PROVIDER: 'anthropic',
   LLM_MODEL: '',      // blank = provider default

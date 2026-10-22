@@ -10,8 +10,9 @@
 // Works anonymously with a small ZeroGPU quota; an HF_TOKEN gives a bigger one.
 import { config } from './config.js';
 import { mimeOf } from './images.js';
+import { comfyMesh } from './comfyui3d.js';
 
-export const MESH_BACKENDS = ['trellis', 'trellis2', 'hunyuan3d', 'hunyuan21', 'sam3d'];
+export const MESH_BACKENDS = ['trellis', 'trellis2', 'hunyuan3d', 'hunyuan21', 'sam3d', 'comfyui'];
 
 // ZeroGPU quota errors: "You have exceeded your ZeroGPU runs limit…", "You have exceeded your
 // GPU quota (120s requested vs. 31s left). Try again in 13:05:10" (wording varies by Space).
@@ -80,16 +81,19 @@ export async function removeBackground(imageBuf, { signal, log } = {}) {
 }
 
 // onCutout(buf) receives the background-free image (used for auto-orientation).
-export async function generateMesh(imageBuf, { backend = config.MESH_BACKEND, signal, log, onCutout }) {
+// extraViews: { back, left, right } pictures for multi-view backends (comfyui with a -mv model).
+export async function generateMesh(imageBuf, { backend = config.MESH_BACKEND, signal, log, onCutout, extraViews = {} }) {
   const { handle_file } = await import('@gradio/client');
   const original = imageBuf;
   try { imageBuf = await removeBackground(imageBuf, { signal, log }); onCutout?.(imageBuf); }
   catch (e) {
     if (signal?.aborted) throw e;
     // Out of ZeroGPU quota: TRELLIS would fail too (same per-user quota), so stop here.
-    if (isQuotaError(e.message)) throw new Error(`Background removal: ${e.message}`);
+    // (the local ComfyUI backend doesn't need the quota, so it goes on with the picture as-is)
+    if (isQuotaError(e.message) && backend !== 'comfyui') throw new Error(`Background removal: ${e.message}`);
     log('info', `Background removal skipped (${e.message}); using the image as-is.`);
   }
+  if (backend === 'comfyui') return comfyMesh({ front: imageBuf, ...extraViews }, { signal, log });
   const image = handle_file(new Blob([imageBuf], { type: mimeOf(imageBuf) }));
   const t0 = Date.now();
   let files;

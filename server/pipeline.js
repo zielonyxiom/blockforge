@@ -121,7 +121,9 @@ export async function generateScan(ctx, signal, { backend = config.MESH_BACKEND 
   if (!pick) throw new Error('The 3D scan needs a reference image first (generate or upload one).');
   ctx.log('info', `Turning "${pick.label}" into a 3D model with ${backend} on Hugging Face…`);
   let cutout = null;
-  const glb = await generateMesh(pick.buf, { backend, signal, log: ctx.log, onCutout: (b) => { cutout = b; } });
+  // other views (back/left/right references) help the multi-view ComfyUI model see the far side
+  const extraViews = Object.fromEntries(['back', 'left', 'right'].map((v) => [v, refs.find((r) => r.view === v)?.buf]).filter(([, b]) => b));
+  const glb = await generateMesh(pick.buf, { backend, signal, log: ctx.log, onCutout: (b) => { cutout = b; }, extraViews });
   ctx.saveMesh(glb, { source: backend, yaw: 0, cutout: cutout ? ctx.saveProjectFile('cutout.png', cutout) : null });
   // Orientation is a nice-to-have: never let it fail the scan.
   try { await orientScan(ctx, signal); }
