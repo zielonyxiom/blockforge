@@ -25,7 +25,7 @@ const colorDist = (a, b) => { const p = hexRgb(a), q = hexRgb(b); return Math.hy
 
 // World-space description of every visible cube (group rotations are ignored: the imported
 // trees and BlockForge builds keep them at 0).
-function parts(model) {
+export function parts(model) {
   return model.parts.filter((p) => p.type !== 'group' && p.visible !== false).map((p) => {
     const R = rotMatrix(p.rotation || [0, 0, 0]);
     const half = p.size.map((s) => s / 2);
@@ -154,6 +154,81 @@ export function analyzeTree(model) {
   };
 }
 
+// Geometry problems that look ugly in Roblox, found by sampling points inside every part:
+//  crossing: a part goes THROUGH another and comes out on the far side (both of its ends
+//            are outside, the middle is inside), e.g. a vine cutting through a trunk corner;
+//  poke:     a part is almost all inside another and pokes out by < 0.12 (looks like a glitch);
+//  hidden:   a part is fully inside another (invisible, wasted);
+//  zfight:   two parallel faces in the same plane overlap (they flicker).
+// Overlaps are normal in this style (plates sunk into cores, branches into trunks); only these
+// four cases are reported.
+export function geometryIssues(model) {
+  const P = parts(model);
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const local = (A, w) => { const d = [w[0] - A.position[0], w[1] - A.position[1], w[2] - A.position[2]]; return [0, 1, 2].map((j) => dot(col(A.R, j), d)); };
+  const inside = (A, w, eps = 1e-3) => local(A, w).every((v, j) => Math.abs(v) <= A.size[j] / 2 - eps);
+  const world = (B, l) => [0, 1, 2].map((i) => B.position[i] + B.R[i][0] * l[0] + B.R[i][1] * l[1] + B.R[i][2] * l[2]);
+  const N = 5, grid = [];
+  for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) for (let c = 0; c < N; c++) grid.push([(a + 0.5) / N - 0.5, (b + 0.5) / N - 0.5, (c + 0.5) / N - 0.5]);
+  const out = { crossing: [], poke: [], hidden: [], zfight: [] };
+  const overlap = (A, B) => [0, 1, 2].every((i) => A.min[i] < B.max[i] && B.min[i] < A.max[i]);
+  const check = (A, B) => {
+    const pts = grid.map((g) => g.map((v, j) => v * B.size[j]));
+    const ins = pts.map((l) => inside(A, world(B, l)));
+    const frac = ins.filter(Boolean).length / ins.length;
+    if (!frac) return;
+    if (frac >= 0.97 && B.vol <= A.vol) {
+      // hidden only if every corner is inside too (samples can't see a thin rim sticking out)
+      let all = true;
+      for (const sx of [-0.5, 0.5]) for (const sy of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) if (!inside(A, world(B, [sx * B.size[0], sy * B.size[1], sz * B.size[2]]), -1e-3)) all = false;
+      if (all) { out.hidden.push([B, A]); return; }
+    }
+    // slices along B's long axis
+    const k = B.size.indexOf(Math.max(...B.size));
+    const slice = Array.from({ length: N }, () => [0, 0]);
+    pts.forEach((l, i) => { const s = Math.min(N - 1, Math.floor((l[k] / B.size[k] + 0.5) * N)); slice[s][0]++; if (ins[i]) slice[s][1]++; });
+    const f = slice.map(([n, m]) => m / n);
+    if (f[0] < 0.25 && f[N - 1] < 0.25 && Math.max(...f.slice(1, N - 1)) > 0.6) { out.crossing.push([B, A]); return; }
+    if (frac >= 0.75) {
+      // how far B sticks out of A: largest distance of B's corners beyond A's faces
+      let stick = 0;
+      for (const sx of [-0.5, 0.5]) for (const sy of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) {
+        const l = local(A, world(B, [sx * B.size[0], sy * B.size[1], sz * B.size[2]]));
+        stick = Math.max(stick, ...l.map((v, j) => Math.abs(v) - A.size[j] / 2));
+      }
+      if (stick > 0.005 && stick < 0.12) out.poke.push([B, A, stick]);
+    }
+  };
+  const groundY = Math.min(...P.map((p) => p.min[1]));
+  const zf = (A, B) => {
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+      const na = col(A.R, a), nb = col(B.R, b);
+      if (Math.abs(dot(na, nb)) < 0.9995) continue;
+      const ca = dot(na, A.position), cb = dot(na, B.position);
+      for (const sa of [-1, 1]) for (const sb of [-1, 1]) {
+        const pa = ca + sa * A.size[a] / 2, pb = cb + sb * B.size[b] / 2 * Math.sign(dot(na, nb));
+        if (Math.abs(pa - pb) > 0.01) continue;
+        // faces pointing opposite ways just touch (hidden inside); only same-facing flush faces flicker
+        if (sa * sb * Math.sign(dot(na, nb)) < 0) continue;
+        // bottom faces resting on the ground or on something else can't be seen
+        if (na[1] * sa < -0.9) continue;
+        // faces overlap if B's face center lies on A's face (in A's other two axes)
+        const fc = B.position.map((v, i) => v + nb[i] * sb * B.size[b] / 2);
+        const l = local(A, fc);
+        if ([0, 1, 2].every((j) => j === a || Math.abs(l[j]) < A.size[j] / 2)) { out.zfight.push([B, A, na, sa]); return; }
+      }
+    }
+  };
+  for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
+    const A = P[i], B = P[j];
+    if (!overlap(A, B) && ![0, 1, 2].every((q) => A.min[q] <= B.max[q] + 0.02 && B.min[q] <= A.max[q] + 0.02)) continue;
+    zf(A, B);
+    if (!overlap(A, B)) continue;
+    check(A, B); check(B, A);
+  }
+  return out;
+}
+
 // Distribution (median, p25, p75) of every numeric metric over many analyses.
 export function summarize(list) {
   const out = {};
@@ -180,9 +255,11 @@ export function styleReport(a, stats) {
   };
   chk('footprint', a.footprint, 'footprint (narrow side / wide side)', 'make it deeper (or flatter) to match');
   chk('tilted_share', a.tilted_share, 'share of tilted parts', 'tilt more parts (organic 2–25° tilts)');
-  chk('trunk.bare_ratio', a.trunk.bare_ratio, 'bare trunk between collar and canopy (× height)', 'raise or lower the canopy');
-  chk('trunk.width_rel', a.trunk.width_rel, 'trunk base width (× tree width)', 'resize the trunk');
-  chk('canopy.start_ratio', a.canopy.start_ratio, 'canopy starts at (× height)', 'move the canopy');
+  const tiered = a.canopy.start_ratio !== null && a.canopy.start_ratio < 0.3;
+  if (tiered) lines.push('· tiered/conifer tree (canopy reaches low): bare-trunk, trunk-width and canopy-start checks skipped');
+  if (!tiered) chk('trunk.bare_ratio', a.trunk.bare_ratio, 'bare trunk between collar and canopy (× height)', 'raise or lower the canopy');
+  if (!tiered) chk('trunk.width_rel', a.trunk.width_rel, 'trunk base width (× tree width)', 'resize the trunk');
+  if (!tiered) chk('canopy.start_ratio', a.canopy.start_ratio, 'canopy starts at (× height)', 'move the canopy');
   chk('canopy.plates_per_blob', a.canopy.plates_per_blob, 'face plates per canopy blob', 'add plates with the core rotation on the blob faces', 'min');
   chk('parts', a.parts, 'part count', 'more/less detail', 'min');
   // roots: judged against the root recipe (collar + 5–6 two-part roots all around), since many

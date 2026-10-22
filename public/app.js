@@ -6,7 +6,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { MeshRef } from './mesh.js';
-import { exportRbxmx } from './roblox.js';
+import { exportRbxmx, exportLuau } from './roblox.js';
 
 const MATERIAL_LIST = ['smooth', 'plastic', 'neon', 'metal', 'glass', 'wood', 'woodplanks', 'slate', 'concrete', 'brick', 'granite',
   'marble', 'cobblestone', 'fabric', 'grass', 'sand', 'ice', 'foil', 'diamondplate', 'corrodedmetal', 'forcefield'];
@@ -1192,6 +1192,7 @@ async function handleBrowserRequest({ id, op, args = {} }) {
       case 'blockify': await requireMesh(); result = meshRef.blockify(args); break;
       case 'tree_skeleton': await requireMesh(); result = meshRef.treeSkeleton(args); break;
       case 'export_rbxmx': result = exportRbxmx(S.model, buildModelObject); break;
+      case 'export_luau': result = { lua: exportLuau(S.model, buildModelObject, args) }; break;
       default: throw new Error(`Unknown browser op ${op}`);
     }
     await api('/api/browser-result', { id, result });

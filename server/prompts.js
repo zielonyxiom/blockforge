@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // All prompts used by the pipeline live here so they are easy to tune.
 
 // Used for every image-generation call unless style/style-prompt.md exists
@@ -179,11 +180,7 @@ export const HOUSE_TREE_RULES = `## Tree mode (the subject is a tree) — HOUSE 
 Build it the way the game's own 50 trees are built. tree_skeleton gives the placement, and tree_template the closest hand-made tree.
 1. Call tree_skeleton FIRST (trunk axis, branch segments, canopy clusters, colors). It also lists the closest house trees. Look at the best one with tree_template (file) to copy its proportions and part counts. tree_template with add: true imports it scaled to the scan as a starting point, if it is close.
 2. TRUNK = 3–8 stacked SEGMENTS (Group "Trunk"), square-ish boxes ~2.2 long (length ≈ 2.3 × width), each ~0.94× as wide as the one below (base 1.5–3 wide, top 0.4–1). Each one is rotated 5–25° relative to the one below so the trunk BENDS along the skeleton axis. Segments overlap 10–30% of their length (no gaps). variant "2022 Small Stud". Leave at least ~0.4× the tree height of bare trunk between the root collar and the canopy so the roots read (e.g. 4 segments of ~2.3 for a 19-stud tree).
-3. ROOTS by default on every trunk, unless the picture clearly shows something else at the base (a pot, a fish head, a stepped slab). Call tree_roots with the trunk base center and width. It builds the game's recipe:
-   - a collar (~1.25× the trunk width, 0.9× tall, yaw 3–5°) with a thinner step on top (~1.1×, 0.6 tall, yaw −6°);
-   - 5–6 two-part roots: a main slab (L 2.3–3.6, thickness 1.0–1.45, width 0.7–1.15 for a ~2-wide trunk) starting inside the trunk high up and running outward/down at 45–58°, plus a thinner ~18° tip lying on the ground;
-   - uneven directions about −38°, 33°, 90°, −95°, 180°, 140° (0° = front), so the base reads from every side. The back root is the longest and steepest;
-   - two small knots, all in the trunk color with "2022 Small Stud".
+3. ROOTS on every trunk (unless the picture shows a pot): tree_roots builds the game's Sunflower roots — a ring of 4 low collar blocks and 4–6 flat roots, each a chain of slabs on the ground tapering to a point, all around. spread sets their reach. A stepped base from the picture goes under them.
 4. BRANCHES: a Y-fork at 50–65% of the height is common. Each branch is 2–4 thinner segments (0.4–1.2 wide) following the skeleton segment (tilt 25–60°), ending INSIDE a canopy blob.
 5. CANOPY starts at ~59% of the height and is 1–3 BLOBS (one per canopy cluster). Each blob:
    a. CORE: one big box filling most of the cluster (e.g. 6 × 4 × 6), with ONE rotation (any yaw, 2–15° pitch/roll).
@@ -191,12 +188,16 @@ Build it the way the game's own 50 trees are built. tree_skeleton gives the plac
    d. Depth: blobs are about as deep as they are wide (the canopy ≈ 0.87× as deep as wide). Spread the blobs in depth too: one more to the back or side, not all in the picture plane.
    c. Blobs overlap, offset sideways and in height (a big top blob + 1–2 smaller lower side blobs), each with its own yaw/tilt.
    Other canopy types if the picture shows them: tiered slabs shrinking upward (Christmas tree), palm fronds (long thin boards 8 × 0.6 × 1.5 tilted 20–40° down), mushroom caps (stepped slabs), sphere-shaped blobs only for round balls (variant "2022 Weld").
-6. COLORS: one exact color for the whole canopy, a dark saturated trunk (e.g. #5a3f2e). Accents (fruit, flowers, gems) in a strong color; fruit = a small beveled cube (core + 2 slabs) with a stem. The gradient decals do the shading, so don't paint shades by hand.
-7. Sizes are free and parts are tilted. NEVER call roblox_snap. Typical part count 25–175 (median 56). Keep details chunky: no strips ≤ 0.15 thick.
-8. BACK AND SIDES get the same detail as the front: fruit/flowers/gems on the back of the canopy too (different positions), plates on every blob side, roots all around.
-9. Checks: render_vs_picture (front + the all-sides numbers), fix RED/BLUE and every FIX line, then check_sides / render_views back, left, right. Then polish_model, colors_from_picture and export_roblox (writes SmoothPlastic + MaterialVariant + 4 gradient decals per part).`;
+6. DETAILS: add_detail (leaf, sprig, fruit, flower, crystal, studded_plate, ornament, lantern, spot, drip, star), 8–20 per tree, scatter them ALL AROUND. Never a single plain box as a detail.
+7. COLORS: one main color for the canopy (vary_shades ±3–5% so it isn't flat), a dark saturated trunk (e.g. #5a3f2e). Accents (fruit, flowers, gems) in a strong color; fruit = a small beveled cube (core + 2 slabs) with a stem. The gradient decals do the shading, so don't paint shades by hand.
+8. Sizes are free and parts are tilted. NEVER call roblox_snap. Typical part count 25–175 (median 56). Keep details chunky: no strips ≤ 0.15 thick.
+9. BACK AND SIDES get the same detail as the front: fruit/flowers/gems on the back of the canopy too (different positions), plates on every blob side, roots all around.
+10. Checks: check_geometry (clean), render_vs_picture (front + the all-sides numbers), check_sides, style_check, render_views back/left/right/top. Fix, then check again. Then polish_model, colors_from_picture and export_roblox (writes SmoothPlastic + MaterialVariant + 4 gradient decals per part).`;
 
-export const treeRules = (presetId) => (presetId === 'roblox_house' ? HOUSE_TREE_RULES : TREE_RULES);
+// docs/TREE_DESIGN_RULES.md: the editable rules + anti-rules, read at startup.
+let designRules = '';
+try { designRules = fs.readFileSync(new URL('../docs/TREE_DESIGN_RULES.md', import.meta.url), 'utf8'); } catch { /* optional */ }
+export const treeRules = (presetId) => (presetId === 'roblox_house' ? HOUSE_TREE_RULES : TREE_RULES) + (designRules ? '\n\n' + designRules : '');
 
 // Appended when the brain is a free model with a tiny request budget.
 export const BUDGET_RULES = `## Request budget (important)

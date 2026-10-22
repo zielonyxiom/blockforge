@@ -16,7 +16,7 @@
     "start": "node server/server.js",
     "mcp": "node mcp/mcp-server.js",
     "mcp:install": "node scripts/install-mcp.mjs",
-    "check": "node -e \"for (const f of ['server/server.js','server/pipeline.js','server/model.js','server/llm.js','server/images.js','server/mesh3d.js','server/roblox.js','server/batch.js','server/templates.js','server/trees.js','server/analyze.js','mcp/mcp-server.js','public/app.js','public/mesh.js','public/roblox.js']) require('child_process').execFileSync(process.execPath, ['--check', f], { stdio: 'inherit' }); console.log('all files OK')\""
+    "check": "node -e \"for (const f of ['server/server.js','server/pipeline.js','server/model.js','server/llm.js','server/images.js','server/mesh3d.js','server/roblox.js','server/batch.js','server/templates.js','server/trees.js','server/analyze.js','server/details.js','mcp/mcp-server.js','public/app.js','public/mesh.js','public/roblox.js']) require('child_process').execFileSync(process.execPath, ['--check', f], { stdio: 'inherit' }); console.log('all files OK')\""
   },
   "engines": {
     "node": ">=20"

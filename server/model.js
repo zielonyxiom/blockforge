@@ -543,6 +543,36 @@ export const SCAN_TOOLS = [
     },
   },
   {
+    name: 'add_detail',
+    description: 'Adds DESIGNED details (each a small group of parts, no plain boxes): leaf (pointed curling leaf on a stem), sprig (3 small leaves), fruit (rounded fruit + stem + leaf), flower (center + petal ring), crystal (cluster of pointed shards), studded_plate (plate with 2×2 studs), ornament (hanging ball + cap), lantern (glowing core + caps), spot (round flat dot), drip (hanging icicle/drip), star (5-point star). Either items: [{kind, position, normal, roll, size, colors}] (normal = the direction it sticks out of the surface), or scatter: {on: group/name prefix/color, count, faces: side|top|bottom|all} to spread them evenly ALL AROUND the tree on free outward faces (back and sides get as many as the front). colors: {color, leaf, stem, center, cap, frame, colors: [..] for crystals}.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['leaf', 'sprig', 'fruit', 'flower', 'crystal', 'studded_plate', 'ornament', 'lantern', 'spot', 'drip', 'star'] },
+        size: { type: 'number' },
+        colors: { type: 'object' },
+        items: { type: 'array', items: { type: 'object' } },
+        scatter: { type: 'object', properties: { on: { type: 'string' }, count: { type: 'number' }, faces: { type: 'string', enum: ['side', 'top', 'bottom', 'all'] } } },
+        group: { type: 'string' }, parent: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'vary_shades',
+    description: 'Makes big same-colored areas look alive: nudges the brightness of each matching part by up to ±amount (default 0.04 = 4%) in a fixed pattern. Filter by color (hex) and/or group name prefix.',
+    input_schema: { type: 'object', properties: { color: { type: 'string' }, group: { type: 'string' }, amount: { type: 'number' } } },
+  },
+  {
+    name: 'export_studio',
+    description: 'Write a Luau script that builds this model directly in Roblox Studio (same parts, CFrames, colors, MaterialVariants and gradient decals as export_roblox). Run the script with the Studio MCP execute_luau tool. position = [x, y, z] in the place (it stands the model on the ground there); name = the Model name (an existing model with that name is replaced).',
+    input_schema: { type: 'object', properties: { name: { type: 'string' }, position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 } } },
+  },
+  {
+    name: 'check_geometry',
+    description: 'CLEAN GEOMETRY CHECK. Finds parts that look ugly in Roblox: CROSSING (a part goes through another and out the far side, e.g. a vine cutting through a trunk), POKE (barely sticks out < 0.12), HIDDEN (fully inside another part, invisible) and Z-FIGHT (flush coplanar faces that flicker). Normal overlaps (plates sunk into cores, branches into trunks) are fine. fix: true deletes hidden parts and nudges z-fighting ones by 0.03. Run it before every export.',
+    input_schema: { type: 'object', properties: { fix: { type: 'boolean' } } },
+  },
+  {
     name: 'style_check',
     description: 'HOUSE STYLE CHECK. Analyzes the structure of your model (trunk segments, bare-trunk height, collar, roots and their directions/slope, canopy start, blobs and face plates, footprint, tilted share, details front/back, thin parts) and compares every number with the statistics of the 50 hand-made trees of the game. ✗ lines say what to change.',
     input_schema: { type: 'object', properties: {} },
@@ -554,13 +584,15 @@ export const SCAN_TOOLS = [
   },
   {
     name: 'tree_roots',
-    description: 'Adds house-style tree roots around a trunk base: collar + step, 6 two-part roots (a 45–58° main slab plus a ~18° tip lying on the ground) in uneven directions all around (-38°, 33°, 90°, -95°, 180°, 140°; 0° = front) and 2 knots, scaled to the trunk width. Get position/width from tree_skeleton (trunk section 1).',
+    description: 'Adds house-style tree roots around a trunk base, scaled to the trunk width. style "sunflower" (default, copied from the Sunflower tree of the game): a ring of 4 low collar blocks and 4 flat roots, each a chain of slabs on the ground tapering to a point and curving a little; simple and clean. style "slabs": collar + step and 6 two-part tilted roots (45–58° slab + ~18° tip). Get position/width from tree_skeleton (trunk section 1) or your trunk.',
     input_schema: {
       type: 'object',
       properties: {
         position: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: '[x, z] of the trunk base center (default [0,0])' },
         trunk_width: { type: 'number', description: 'trunk width at the base in studs (default 2)' },
         spread: { type: 'number', description: 'root length factor: 1 = the game recipe, 0.6 = short feet, 1.3 = long crawling roots; match the picture' },
+        style: { type: 'string', enum: ['sunflower', 'slabs'], description: 'default sunflower' },
+        count: { type: 'number', description: 'sunflower style: number of roots (default 4; 5–6 for big trees)' },
         ground: { type: 'number', description: 'ground height (default 0)' },
         color: { type: 'string', description: 'trunk color (default #5a3f2e)' },
         group: { type: 'string', description: 'group name (default "Roots")' },

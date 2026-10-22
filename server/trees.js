@@ -58,5 +58,32 @@ export function rootParts({ position = [0, 0], ground = 0, trunkWidth = 2, sprea
   return parts;
 }
 
+// The user's Sunflower roots (Flower_Tree_2, measured in Studio): a ring of 4 low collar
+// blocks around the stem, then 4 roots, each a chain of flat slabs lying on the ground that
+// get thinner and smaller toward a pointed tip, turning a little as they go (a low star).
+// Sizes are in stem widths w: [distance from the axis, long side, thickness, short side].
+const SUNFLOWER_CHAIN = [[0.62, 1.15, 0.34, 0.6], [1.06, 0.75, 0.22, 0.45], [1.37, 0.4, 0.17, 0.3], [1.55, 0.42, 0.13, 0.17]];
+export function sunflowerRoots({ position = [0, 0], ground = 0, trunkWidth = 1.4, spread = 1, count = 4, color = '#4a701d', group = 'Roots', parent } = {}) {
+  const w = trunkWidth, [cx, cz] = position;
+  const common = { color, material: 'smooth', variant: '2022 Small Stud', parent: group };
+  const parts = [{ kind: 'group', name: group, ...(parent ? { parent } : {}), pivot: [cx, ground, cz] }];
+  const at = (yaw, dist) => { const d = new THREE.Vector3(0, 0, 1).applyQuaternion(yawQ(yaw)); return [r(cx + d.x * dist), r(cz + d.z * dist)]; };
+  // collar ring: 4 blocks hugging the stem base, each turned a little
+  [0, 90, 180, 270].forEach((yaw, i) => {
+    const [x, z] = at(yaw + 10, 0.37 * w), h = (0.5 + 0.06 * (i % 2)) * w;
+    parts.push({ ...common, name: 'Collar', position: [x, r(ground + h / 2), z], size: [r(0.8 * w), r(h), r(0.8 * w)], rotation: [0, r(yaw + 10 + (i % 2 ? -4 : 3)), 0] });
+  });
+  for (let i = 0; i < count; i++) {
+    const base = 10 + (360 / count) * i + [0, 7, -6, 4, -3, 8][i % 6];
+    SUNFLOWER_CHAIN.forEach(([dist, long, thick, short], k) => {
+      const yaw = base + 9 * k; // the chain swirls a little
+      const [x, z] = at(yaw, dist * w * (k ? spread : 1));
+      // long side (X) points outward: rotate X onto the radial direction
+      parts.push({ ...common, name: `Root_${i + 1}_${k + 1}`, position: [x, r(ground + (thick * w) / 2), z], size: [r(long * w * (k ? spread : 1)), r(Math.max(0.16, thick * w)), r(short * w)], rotation: [0, r(yaw - 90), 0] });
+    });
+  }
+  return parts;
+}
+
 // Parts thinner than this read as glitchy strips in Roblox.
 export const THIN = 0.15;

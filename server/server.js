@@ -13,8 +13,10 @@ import { imageModelName, canEditImages } from './images.js';
 import { importFolder, runScanQueue, queueSummary } from './batch.js';
 import { treeIndex, loadTemplate, closestTrees, templateParts } from './templates.js';
 import { removeBackground } from './mesh3d.js';
-import { rootParts, THIN } from './trees.js';
-import { analyzeTree, summarize, styleReport } from './analyze.js';
+import { rootParts, sunflowerRoots, THIN } from './trees.js';
+import { analyzeTree, summarize, styleReport, geometryIssues, parts as analyzeParts } from './analyze.js';
+import { detailParts, scatterTargets, shade, DETAILS } from './details.js';
+const color6 = (c) => String(c).toLowerCase();
 
 let houseStats = null; // statistics of the game's trees (training/studio-trees), computed once
 
@@ -360,6 +362,74 @@ async function runTool(name, input = {}) {
           (sides ? `\n${sides.text}` : ''),
       };
     }
+    case 'add_detail': {
+      const group = store.uniqueName(input.group || `Details_${input.kind || 'mixed'}`);
+      const head = [{ kind: 'group', name: group, ...(input.parent ? { parent: input.parent } : {}), pivot: [0, 0, 0] }];
+      let anchors = input.items || [];
+      if (input.scatter) {
+        const sc = input.scatter, want = sc.count || 8, existing = analyzeParts(store.model);
+        // ask for extra candidates (still spread all around) and keep the ones whose pieces stay
+        // clear of other parts: no piece center inside a part, at most half its corners inside
+        const cands = scatterTargets(store.model, existing, { on: sc.on, count: want * 3, faces: sc.faces || 'side' });
+        const free = (pc) => {
+          const probe = analyzeParts({ parts: pc.map((p, i) => ({ ...p, id: `probe${i}`, type: 'cube', shape: p.shape || 'box' })) });
+          const inside = (A, w) => { const d = [0, 1, 2].map((i) => w[i] - A.position[i]); return [0, 1, 2].every((j) => Math.abs(A.R[0][j] * d[0] + A.R[1][j] * d[1] + A.R[2][j] * d[2]) < A.size[j] / 2 - 0.02); };
+          return probe.every((q) => {
+            if (existing.some((A) => inside(A, q.position))) return false;
+            let n = 0;
+            for (const sx of [-0.5, 0.5]) for (const sy of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) {
+              const w = [0, 1, 2].map((i) => q.position[i] + q.R[i][0] * sx * q.size[0] + q.R[i][1] * sy * q.size[1] + q.R[i][2] * sz * q.size[2]);
+              if (existing.some((A) => inside(A, w))) n++;
+            }
+            return n <= 4;
+          });
+        };
+        anchors = [];
+        for (const c of cands) {
+          if (anchors.length >= want) break;
+          const a = { ...c, kind: input.kind, size: input.size, colors: input.colors };
+          if (free(detailParts({ kind: a.kind, position: a.position, normal: a.normal, roll: a.roll, size: a.size, colors: a.colors || {} }))) anchors.push(a);
+        }
+      }
+      if (!anchors.length) throw new Error('Give items (position/normal per detail) or scatter {on, count, faces}.');
+      const body = anchors.flatMap((a, i) => {
+        const sub = `${group}_${i + 1}`;
+        return [{ kind: 'group', name: sub, parent: group, pivot: a.position }, ...detailParts({ kind: a.kind || input.kind, position: a.position, normal: a.normal, roll: a.roll ?? 0, size: a.size || input.size, colors: { ...(input.colors || {}), ...(a.colors || {}) }, group: sub })];
+      });
+      store.exec({ op: 'add_parts', parts: [...head, ...body] }, 'tool');
+      return { text: `Added ${anchors.length} detail(s) in group "${group}" (${body.filter((p) => p.kind !== 'group').length} parts)${input.scatter ? ', spread all around the tree' : ''}. Check with check_geometry and render_views.` };
+    }
+    case 'vary_shades': {
+      // nudge the brightness of same-colored parts a little (±amount) so big areas look alive
+      const amt = Math.min(0.12, Math.max(0.01, input.amount ?? 0.04));
+      const target = input.color && color6(input.color);
+      const list = store.model.parts.filter((p) => p.type === 'cube' && (!target || p.color === target) && (!input.group || p.name.startsWith(input.group)));
+      const updates = list.map((p, i) => ({ id: p.id, color: shade(p.color, 1 + amt * [0, 1, -1, 0.5, -0.5][i % 5]) }));
+      if (updates.length) store.exec({ op: 'update_parts', updates }, 'tool');
+      return { text: `Varied the shade of ${updates.length} part(s) by up to ±${Math.round(amt * 100)}%.` };
+    }
+    case 'check_geometry': {
+      const g = geometryIssues(store.model);
+      const nm = (p) => p.name;
+      const lines = [];
+      const list = (arr, fmt) => arr.slice(0, 15).map(fmt).join('; ') + (arr.length > 15 ? ` …+${arr.length - 15}` : '');
+      if (g.crossing.length) lines.push(`CROSSING (${g.crossing.length}) — goes through and out the far side; move it so only one end is sunk in, or shorten it: ${list(g.crossing, ([b, a]) => `${nm(b)} through ${nm(a)}`)}`);
+      if (g.poke.length) lines.push(`POKE (${g.poke.length}) — barely sticks out; push it fully in or out by ≥0.15: ${list(g.poke, ([b, a, s]) => `${nm(b)} out of ${nm(a)} by ${s.toFixed(2)}`)}`);
+      if (g.hidden.length) lines.push(`HIDDEN (${g.hidden.length}) — fully inside another part, invisible: ${list(g.hidden, ([b, a]) => `${nm(b)} in ${nm(a)}`)}`);
+      if (g.zfight.length) lines.push(`Z-FIGHT (${g.zfight.length}) — flush faces flicker; offset one by ≥0.03: ${list(g.zfight, ([b, a]) => `${nm(b)} / ${nm(a)}`)}`);
+      if (input.fix) {
+        const del = [...new Set(g.hidden.map(([b]) => b.id))];
+        const updates = [];
+        for (const [b, a, n, s] of g.zfight) if (!del.includes(b.id)) {
+          const out = b.vol <= a.vol ? 1 : -1; // move the smaller part outward
+          updates.push({ id: b.id, move: n.map((v) => Math.round(v * s * 0.03 * out * 1000) / 1000) });
+        }
+        if (del.length) store.exec({ op: 'delete_parts', ids: del }, 'tool');
+        if (updates.length) store.exec({ op: 'update_parts', updates }, 'tool');
+        lines.push(`FIXED: deleted ${del.length} hidden part(s), nudged ${updates.length} z-fighting part(s) by 0.03. Crossing and poke parts need a design decision: fix them by hand.`);
+      }
+      return { text: lines.length ? lines.join('\n') : 'Clean: no crossing, poking, hidden or z-fighting parts.' };
+    }
     case 'style_check': {
       if (!houseStats) {
         const trees = treeIndex().map((t) => analyzeTree(loadTemplate(t.file).model));
@@ -377,9 +447,13 @@ async function runTool(name, input = {}) {
     }
     case 'tree_roots': {
       const group = store.uniqueName(input.group || 'Roots');
-      const parts = rootParts({ position: input.position, ground: input.ground ?? 0, trunkWidth: input.trunk_width || 2, spread: input.spread || 1, color: input.color, group, parent: input.parent });
+      const opts = { position: input.position, ground: input.ground ?? 0, trunkWidth: input.trunk_width || 2, spread: input.spread || 1, color: input.color, group, parent: input.parent };
+      const slabs = input.style === 'slabs';
+      const parts = slabs ? rootParts(opts) : sunflowerRoots({ ...opts, count: input.count || 4 });
       store.exec({ op: 'add_parts', parts }, 'tool');
-      return { text: `Added roots in group "${group}": collar + step, 6 two-part roots (directions -38°, 33°, 90°, -95°, 180°, 140°; 45–58° main slabs with ~18° tips on the ground) and 2 knots (${parts.length - 1} parts). Trunk width ${input.trunk_width || 2}.` };
+      return { text: slabs
+        ? `Added slab roots in group "${group}": collar + step, 6 two-part roots (45–58° slabs with ~18° tips) and 2 knots (${parts.length - 1} parts).`
+        : `Added Sunflower roots in group "${group}": a ring of 4 collar blocks and ${input.count || 4} flat roots, each a chain of 4 slabs on the ground tapering to a point (${parts.length - 1} parts, trunk width ${opts.trunkWidth}).` };
     }
     case 'polish_model': {
       if (!meshInfo()) throw new Error('polish_model needs a 3D scan (run the 3D scan step first).');
@@ -418,6 +492,14 @@ async function runTool(name, input = {}) {
       }
       if (updates.length) store.exec({ op: 'update_parts', updates }, 'tool');
       return { text: `Recolored ${updates.length} parts in ${changes.length} color groups from the picture${snap ? ' (snapped to BrickColors)' : ''}: ${changes.join(', ')}.${kept.length ? ` Kept ${kept.join(', ')} (too small to measure).` : ''}` };
+    }
+    case 'export_studio': {
+      const name = input.name || store.model.name || project.meta.name;
+      const r = await requestBrowser('export_luau', { name, target: input.position || [0, 0, 0] });
+      const file = `${slugify(name)}.studio.lua`;
+      const full = path.join(projectPaths(project.slug).dir, file);
+      fs.writeFileSync(full, r.lua);
+      return { text: `Wrote a Studio build script (${(r.lua.length / 1024).toFixed(1)} KB) to ${full}. Run its contents with the Roblox Studio MCP execute_luau tool (datamodel Edit) or paste it into the Studio command bar: it builds Model "${name}" in workspace at x ${(input.position || [0, 0, 0])[0]}, z ${(input.position || [0, 0, 0])[2]} on the ground found there, replacing an older model with that name.` };
     }
     case 'export_roblox': {
       const r = await requestBrowser('export_rbxmx');

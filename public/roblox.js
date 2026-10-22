@@ -96,6 +96,75 @@ function defaultVariant(p) {
   return brown ? '2022 Small Stud' : '2022 Small Universal';
 }
 
+// Luau script that builds the model directly in Roblox Studio (run it with the Studio MCP
+// execute_luau tool or the command bar). Same parts, CFrames, colors, MaterialVariants and
+// decals as the .rbxmx export; it replaces an earlier model with the same name and stands
+// the model on the ground found under `target`.
+export function exportLuau(model, buildModelObject, { name, target = [0, 0, 0] } = {}) {
+  const { root, objects } = buildModelObject(model, { edges: false });
+  root.updateMatrixWorld(true);
+  const rows = [];
+  const f = (v) => +n(v).toFixed(3);
+  for (const p of model.parts) {
+    if (p.type === 'group' || p.visible === false) continue;
+    const obj = objects.get(p.id);
+    const world = new THREE.Matrix4().multiplyMatrices(TO_ROBLOX, obj.matrixWorld);
+    const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3();
+    world.decompose(pos, quat, scl);
+    const rot = new THREE.Matrix4().makeRotationFromQuaternion(quat);
+    let size = [scl.x, scl.y, scl.z], cls = 'Part', shape = 1, ball = 0;
+    if (p.shape === 'cylinder') { rot.multiply(LOCAL_FIX.cylinder); size = [scl.y, scl.x, scl.z]; shape = 2; }
+    else if (p.shape === 'wedge') { rot.multiply(LOCAL_FIX.wedge); cls = 'WedgePart'; }
+    else if (p.shape === 'sphere') { if (Math.max(...size) - Math.min(...size) < 0.01) shape = 0; else ball = 1; }
+    const e = rot.elements;
+    const special = ['neon', 'glass', 'forcefield'].includes(p.material);
+    const house = model.style === 'house' && !special;
+    const material = house ? 'smooth' : p.material;
+    const variant = house ? (p.variant || defaultVariant(p)) : (p.variant || '');
+    const decals = house && p.gradientDecals !== false ? 1 : 0;
+    rows.push(`{${JSON.stringify(cls)},${JSON.stringify(p.name)},{${[pos.x, pos.y, pos.z, e[0], e[4], e[8], e[1], e[5], e[9], e[2], e[6], e[10]].map(f).join(',')}},{${size.map(f).join(',')}},${parseInt(p.color.slice(1), 16)},${JSON.stringify(material)},${JSON.stringify(variant)},${shape},${ball},${decals},${p.material === 'glass' ? 0.5 : 0}}`);
+  }
+  const title = name || model.name || 'BlockForgeModel';
+  return `-- ${title}: built by BlockForge (${rows.length} parts)
+local NAME, TARGET = ${JSON.stringify(title)}, Vector3.new(${target.map(f).join(', ')})
+local D = {
+${rows.join(',\n')}
+}
+local MAT = { smooth = Enum.Material.SmoothPlastic, plastic = Enum.Material.Plastic, neon = Enum.Material.Neon, glass = Enum.Material.Glass, wood = Enum.Material.Wood, woodplanks = Enum.Material.WoodPlanks, metal = Enum.Material.Metal, slate = Enum.Material.Slate, concrete = Enum.Material.Concrete, brick = Enum.Material.Brick, granite = Enum.Material.Granite, marble = Enum.Material.Marble, cobblestone = Enum.Material.Cobblestone, fabric = Enum.Material.Fabric, grass = Enum.Material.Grass, sand = Enum.Material.Sand, ice = Enum.Material.Ice, foil = Enum.Material.Foil, diamondplate = Enum.Material.DiamondPlate, corrodedmetal = Enum.Material.CorrodedMetal, forcefield = Enum.Material.ForceField }
+local hit = workspace:Raycast(TARGET + Vector3.new(0, 80, 0), Vector3.new(0, -300, 0))
+local groundY = hit and hit.Position.Y or TARGET.Y
+local old = workspace:FindFirstChild(NAME)
+if old then old:Destroy() end
+local model = Instance.new("Model")
+model.Name = NAME
+for _, d in ipairs(D) do
+\tlocal p = Instance.new(d[1])
+\tp.Name, p.Anchored = d[2], true
+\tlocal c = d[3]
+\tp.Size = Vector3.new(d[4][1], d[4][2], d[4][3])
+\tp.CFrame = CFrame.new(c[1] + TARGET.X, c[2] + groundY, c[3] + TARGET.Z, c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12])
+\tp.Color = Color3.fromRGB(bit32.rshift(d[5], 16) % 256, bit32.rshift(d[5], 8) % 256, d[5] % 256)
+\tp.Material = MAT[d[6]] or Enum.Material.SmoothPlastic
+\tif d[7] ~= "" then p.MaterialVariant = d[7] end
+\tp.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+\tp.Transparency = d[11]
+\tif d[1] == "Part" and d[8] == 0 then p.Shape = Enum.PartType.Ball elseif d[1] == "Part" and d[8] == 2 then p.Shape = Enum.PartType.Cylinder end
+\tif d[9] == 1 then local m = Instance.new("SpecialMesh"); m.MeshType = Enum.MeshType.Sphere; m.Parent = p end
+\tif d[10] == 1 then
+\t\tfor _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back, Enum.NormalId.Left, Enum.NormalId.Right }) do
+\t\t\tlocal dc = Instance.new("Decal")
+\t\t\tdc.Face, dc.Texture, dc.Color3, dc.Transparency, dc.ZIndex = face, "${GRADIENT_TEXTURE}", Color3.new(0, 0, 0), 0.85, 1
+\t\t\tdc.Parent = p
+\t\tend
+\tend
+\tp.Parent = model
+end
+model.Parent = workspace
+local cf, s = model:GetBoundingBox()
+return string.format("%s: %d parts at %s, size %s", NAME, #model:GetChildren(), tostring(cf.Position), tostring(s))
+`;
+}
+
 // buildModelObject: the editor's builder (returns { root, objects }).
 export function exportRbxmx(model, buildModelObject) {
   refSeq = 0;
