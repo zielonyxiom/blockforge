@@ -8,7 +8,7 @@ import * as THREE from 'three';
 const D = Math.PI / 180;
 const r = (v) => Math.round(v * 1000) / 1000;
 const MIN = 0.18; // thinnest allowed piece
-const HANGING = new Set(['drip', 'ornament', 'lantern']);
+const HANGING = new Set(['drip', 'ornament', 'lantern', 'banana']);
 
 export function shade(hex, f) {
   const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -118,6 +118,38 @@ export const DETAILS = {
       box('Drip_3', [0, -0.82 * s, 0], [0.2, 0.24 * s, 0.2], [0, 24, 0], shade(p, 1.12)),
     ];
   },
+  // mushroom: stem, wide cap, smaller cap top, two light spots on the cap
+  mushroom: (s, c) => {
+    const cap = c.color || '#b0306a', stem = c.stem || '#efe4cf', dot = c.spots || '#f6f0e4';
+    return [
+      box('Stem', [0, 0.3 * s, 0], [0.34 * s, 0.6 * s, 0.34 * s], [0, 0, 0], stem),
+      box('Cap', [0, 0.72 * s, 0], [s, 0.3 * s, s], [0, 0, 0], cap),
+      box('Cap_Top', [0, 0.97 * s, 0], [0.66 * s, 0.22 * s, 0.66 * s], [0, 0, 0], shade(cap, 1.1)),
+      box('Spot', [0.22 * s, 1.1 * s, 0.1 * s], [0.2, 0.2, 0.2], [0, 20, 0], dot),
+      box('Spot', [-0.15 * s, 1.1 * s, -0.18 * s], [0.2, 0.2, 0.2], [0, -15, 0], dot),
+    ];
+  },
+  // lightning bolt sticking out of a surface: 4 zig-zag blocks getting thinner to a point, glowing
+  bolt: (s, c) => {
+    const p = c.color || '#ffd31a', m = c.material || 'neon';
+    return [
+      box('Bolt_1', [0.1 * s, 0.2 * s, 0], [0.34 * s, 0.5 * s, 0.24 * s], [0, 0, -25], p, { material: m }),
+      box('Bolt_2', [-0.1 * s, 0.55 * s, 0], [0.42 * s, 0.22 * s, 0.22 * s], [0, 0, 20], shade(p, 1.05), { material: m }),
+      box('Bolt_3', [0.04 * s, 0.82 * s, 0], [0.26 * s, 0.46 * s, 0.2], [0, 0, -25], p, { material: m }),
+      box('Bolt_4', [0.14 * s, 1.1 * s, 0], [0.2, 0.26 * s, 0.2], [0, 0, -35], shade(p, 1.1), { material: m }),
+    ];
+  },
+  // small banana hanging from the anchor: 3 segments curving outward + a dark tip
+  banana: (s, c) => {
+    const y = c.color || '#f2d04a';
+    return [
+      box('Banana_Stem', [0, -0.12 * s, 0], [0.2, 0.26 * s, 0.2], [0, 0, 0], c.stem || '#6f8a3a'),
+      box('Banana_1', [0, -0.45 * s, 0.05 * s], [0.3 * s, 0.46 * s, 0.3 * s], [12, 0, 0], y),
+      box('Banana_2', [0, -0.85 * s, 0.2 * s], [0.32 * s, 0.42 * s, 0.32 * s], [30, 0, 0], shade(y, 1.05)),
+      box('Banana_3', [0, -1.15 * s, 0.42 * s], [0.26 * s, 0.34 * s, 0.26 * s], [52, 0, 0], shade(y, 0.95)),
+      box('Banana_Tip', [0, -1.32 * s, 0.6 * s], [0.2, 0.16 * s, 0.2], [60, 0, 0], '#4a3220'),
+    ];
+  },
   // 5-point star (tree tops): center + 5 points in the plane facing +Z
   star: (s, c) => {
     const p = c.color || '#ffd447', out = [box('Star', [0, 0, 0], [0.42 * s, 0.42 * s, 0.26 * s], [0, 0, 45], p, { material: c.material || 'neon' })];
@@ -133,7 +165,7 @@ export const DETAILS = {
 export function detailParts({ kind, position, normal = [0, 1, 0], roll = 0, size, colors = {}, group, parent }) {
   const make = DETAILS[kind];
   if (!make) throw new Error(`Unknown detail "${kind}" (use ${Object.keys(DETAILS).join(', ')})`);
-  const DEF = { leaf: 2.2, sprig: 1.2, fruit: 1.3, flower: 1.6, crystal: 2.6, studded_plate: 1.4, ornament: 0.8, lantern: 1, spot: 1, drip: 1.4, star: 1.8 };
+  const DEF = { leaf: 2.2, sprig: 1.2, fruit: 1.3, flower: 1.6, crystal: 2.6, studded_plate: 1.4, ornament: 0.8, lantern: 1, spot: 1, drip: 1.4, star: 1.8, mushroom: 1.2, bolt: 2.4, banana: 1.2 };
   const s = size || DEF[kind];
   // hanging details (drip, ornament, lantern) always hang straight down, whatever the face
   const n = HANGING.has(kind) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(...normal).normalize();

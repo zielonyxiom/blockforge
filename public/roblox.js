@@ -131,10 +131,11 @@ local D = {
 ${rows.join(',\n')}
 }
 local MAT = { smooth = Enum.Material.SmoothPlastic, plastic = Enum.Material.Plastic, neon = Enum.Material.Neon, glass = Enum.Material.Glass, wood = Enum.Material.Wood, woodplanks = Enum.Material.WoodPlanks, metal = Enum.Material.Metal, slate = Enum.Material.Slate, concrete = Enum.Material.Concrete, brick = Enum.Material.Brick, granite = Enum.Material.Granite, marble = Enum.Material.Marble, cobblestone = Enum.Material.Cobblestone, fabric = Enum.Material.Fabric, grass = Enum.Material.Grass, sand = Enum.Material.Sand, ice = Enum.Material.Ice, foil = Enum.Material.Foil, diamondplate = Enum.Material.DiamondPlate, corrodedmetal = Enum.Material.CorrodedMetal, forcefield = Enum.Material.ForceField }
-local hit = workspace:Raycast(TARGET + Vector3.new(0, 80, 0), Vector3.new(0, -300, 0))
-local groundY = hit and hit.Position.Y or TARGET.Y
+-- remove the previous build first, or the ground ray lands on its canopy
 local old = workspace:FindFirstChild(NAME)
 if old then old:Destroy() end
+local hit = workspace:Raycast(TARGET + Vector3.new(0, 80, 0), Vector3.new(0, -300, 0))
+local groundY = hit and hit.Position.Y or TARGET.Y
 local model = Instance.new("Model")
 model.Name = NAME
 for _, d in ipairs(D) do

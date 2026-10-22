@@ -544,11 +544,11 @@ export const SCAN_TOOLS = [
   },
   {
     name: 'add_detail',
-    description: 'Adds DESIGNED details (each a small group of parts, no plain boxes): leaf (pointed curling leaf on a stem), sprig (3 small leaves), fruit (rounded fruit + stem + leaf), flower (center + petal ring), crystal (cluster of pointed shards), studded_plate (plate with 2×2 studs), ornament (hanging ball + cap), lantern (glowing core + caps), spot (round flat dot), drip (hanging icicle/drip), star (5-point star). Either items: [{kind, position, normal, roll, size, colors}] (normal = the direction it sticks out of the surface), or scatter: {on: group/name prefix/color, count, faces: side|top|bottom|all} to spread them evenly ALL AROUND the tree on free outward faces (back and sides get as many as the front). colors: {color, leaf, stem, center, cap, frame, colors: [..] for crystals}.',
+    description: 'Adds DESIGNED details (each a small group of parts, no plain boxes): leaf (pointed curling leaf on a stem), sprig (3 small leaves), fruit (rounded fruit + stem + leaf), flower (center + petal ring), crystal (cluster of pointed shards), studded_plate (plate with 2×2 studs), ornament (hanging ball + cap), lantern (glowing core + caps), spot (round flat dot), drip (hanging icicle/drip), star (5-point star), mushroom (stem + cap + spots), bolt (glowing zig-zag lightning), banana (small hanging banana). Either items: [{kind, position, normal, roll, size, colors}] (normal = the direction it sticks out of the surface), or scatter: {on: group/name prefix/color, count, faces: side|top|bottom|all} to spread them evenly ALL AROUND the tree on free outward faces (back and sides get as many as the front). colors: {color, leaf, stem, center, cap, frame, colors: [..] for crystals}.',
     input_schema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['leaf', 'sprig', 'fruit', 'flower', 'crystal', 'studded_plate', 'ornament', 'lantern', 'spot', 'drip', 'star'] },
+        kind: { type: 'string', enum: ['leaf', 'sprig', 'fruit', 'flower', 'crystal', 'studded_plate', 'ornament', 'lantern', 'spot', 'drip', 'star', 'mushroom', 'bolt', 'banana'] },
         size: { type: 'number' },
         colors: { type: 'object' },
         items: { type: 'array', items: { type: 'object' } },
@@ -556,6 +556,11 @@ export const SCAN_TOOLS = [
         group: { type: 'string' }, parent: { type: 'string' },
       },
     },
+  },
+  {
+    name: 'scale_model',
+    description: 'Scale the whole model uniformly, keeping it standing on the ground: height = target height in studs (grown trees in the game are ~20–23 tall), or factor.',
+    input_schema: { type: 'object', properties: { height: { type: 'number' }, factor: { type: 'number' } } },
   },
   {
     name: 'vary_shades',
@@ -593,6 +598,7 @@ export const SCAN_TOOLS = [
         spread: { type: 'number', description: 'root length factor: 1 = the game recipe, 0.6 = short feet, 1.3 = long crawling roots; match the picture' },
         style: { type: 'string', enum: ['sunflower', 'slabs'], description: 'default sunflower' },
         count: { type: 'number', description: 'sunflower style: number of roots (default 4; 5–6 for big trees)' },
+        buttress: { type: 'boolean', description: 'sunflower style: add a chunky sloped slab per root from the trunk down into it (more volume for big trunks)' },
         ground: { type: 'number', description: 'ground height (default 0)' },
         color: { type: 'string', description: 'trunk color (default #5a3f2e)' },
         group: { type: 'string', description: 'group name (default "Roots")' },

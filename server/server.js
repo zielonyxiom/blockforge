@@ -17,6 +17,7 @@ import { rootParts, sunflowerRoots, THIN } from './trees.js';
 import { analyzeTree, summarize, styleReport, geometryIssues, parts as analyzeParts } from './analyze.js';
 import { detailParts, scatterTargets, shade, DETAILS } from './details.js';
 const color6 = (c) => String(c).toLowerCase();
+const r3 = (v) => Math.round(v * 1000) / 1000;
 
 let houseStats = null; // statistics of the game's trees (training/studio-trees), computed once
 
@@ -362,6 +363,19 @@ async function runTool(name, input = {}) {
           (sides ? `\n${sides.text}` : ''),
       };
     }
+    case 'scale_model': {
+      // uniform scale around the model's ground center, so it keeps standing on y = 0
+      const cubes = store.model.parts.filter((p) => p.type === 'cube');
+      if (!cubes.length) throw new Error('The model is empty.');
+      const b = store.bounds(), h = b.max[1] - b.min[1];
+      const f = input.height ? input.height / h : input.factor;
+      if (!(f > 0)) throw new Error('Give height (target studs) or factor.');
+      const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2, y0 = b.min[1];
+      const at = (p) => [r3((p[0] - cx) * f + cx), r3((p[1] - y0) * f), r3((p[2] - cz) * f + cz)];
+      const updates = store.model.parts.map((p) => (p.type === 'group' ? { id: p.id, pivot: at(p.pivot) } : { id: p.id, position: at(p.position), size: p.size.map((v) => r3(v * f)) }));
+      store.exec({ op: 'update_parts', updates }, 'tool');
+      return { text: `Scaled the model ×${f.toFixed(3)} (${h.toFixed(1)} → ${(h * f).toFixed(1)} studs tall), standing on the ground.` };
+    }
     case 'add_detail': {
       const group = store.uniqueName(input.group || `Details_${input.kind || 'mixed'}`);
       const head = [{ kind: 'group', name: group, ...(input.parent ? { parent: input.parent } : {}), pivot: [0, 0, 0] }];
@@ -416,6 +430,7 @@ async function runTool(name, input = {}) {
       if (g.crossing.length) lines.push(`CROSSING (${g.crossing.length}) — goes through and out the far side; move it so only one end is sunk in, or shorten it: ${list(g.crossing, ([b, a]) => `${nm(b)} through ${nm(a)}`)}`);
       if (g.poke.length) lines.push(`POKE (${g.poke.length}) — barely sticks out; push it fully in or out by ≥0.15: ${list(g.poke, ([b, a, s]) => `${nm(b)} out of ${nm(a)} by ${s.toFixed(2)}`)}`);
       if (g.hidden.length) lines.push(`HIDDEN (${g.hidden.length}) — fully inside another part, invisible: ${list(g.hidden, ([b, a]) => `${nm(b)} in ${nm(a)}`)}`);
+      if (g.edge.length) lines.push(`EDGE (${g.edge.length}) — a stacked block's corners stick out past the block below; turn it to the same yaw (±5°) and make it a bit narrower so it nests: ${list(g.edge, ([b, a, w]) => `${nm(b)} on ${nm(a)} by ${w.toFixed(2)}`)}`);
       if (g.zfight.length) lines.push(`Z-FIGHT (${g.zfight.length}) — flush faces flicker; offset one by ≥0.03: ${list(g.zfight, ([b, a]) => `${nm(b)} / ${nm(a)}`)}`);
       if (input.fix) {
         const del = [...new Set(g.hidden.map(([b]) => b.id))];
@@ -449,7 +464,7 @@ async function runTool(name, input = {}) {
       const group = store.uniqueName(input.group || 'Roots');
       const opts = { position: input.position, ground: input.ground ?? 0, trunkWidth: input.trunk_width || 2, spread: input.spread || 1, color: input.color, group, parent: input.parent };
       const slabs = input.style === 'slabs';
-      const parts = slabs ? rootParts(opts) : sunflowerRoots({ ...opts, count: input.count || 4 });
+      const parts = slabs ? rootParts(opts) : sunflowerRoots({ ...opts, count: input.count || 4, buttress: !!input.buttress });
       store.exec({ op: 'add_parts', parts }, 'tool');
       return { text: slabs
         ? `Added slab roots in group "${group}": collar + step, 6 two-part roots (45–58° slabs with ~18° tips) and 2 knots (${parts.length - 1} parts).`

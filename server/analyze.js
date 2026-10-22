@@ -170,7 +170,7 @@ export function geometryIssues(model) {
   const world = (B, l) => [0, 1, 2].map((i) => B.position[i] + B.R[i][0] * l[0] + B.R[i][1] * l[1] + B.R[i][2] * l[2]);
   const N = 5, grid = [];
   for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) for (let c = 0; c < N; c++) grid.push([(a + 0.5) / N - 0.5, (b + 0.5) / N - 0.5, (c + 0.5) / N - 0.5]);
-  const out = { crossing: [], poke: [], hidden: [], zfight: [] };
+  const out = { crossing: [], poke: [], hidden: [], zfight: [], edge: [] };
   const overlap = (A, B) => [0, 1, 2].every((i) => A.min[i] < B.max[i] && B.min[i] < A.max[i]);
   const check = (A, B) => {
     const pts = grid.map((g) => g.map((v, j) => v * B.size[j]));
@@ -188,7 +188,13 @@ export function geometryIssues(model) {
     const slice = Array.from({ length: N }, () => [0, 0]);
     pts.forEach((l, i) => { const s = Math.min(N - 1, Math.floor((l[k] / B.size[k] + 0.5) * N)); slice[s][0]++; if (ins[i]) slice[s][1]++; });
     const f = slice.map(([n, m]) => m / n);
-    if (f[0] < 0.25 && f[N - 1] < 0.25 && Math.max(...f.slice(1, N - 1)) > 0.6) { out.crossing.push([B, A]); return; }
+    // two boxes on the same axis (one turned around it) are a bevel/octagon composite, not a crossing
+    const off = [0, 1, 2].map((i) => B.position[i] - A.position[i]);
+    const shareAxis = [0, 1, 2].some((i) => [0, 1, 2].some((j) => Math.abs(dot(col(A.R, i), col(B.R, j))) > 0.98));
+    const coaxial = shareAxis && Math.hypot(...off) < 0.1 * Math.min(...B.size);
+    // an end that is buried in a third part (a branch entering a canopy core) isn't sticking out
+    const endBuried = [-0.45, 0.45].some((t) => { const l = [0, 0, 0]; l[k] = t * B.size[k]; const w = world(B, l); return P.some((Q) => Q !== A && Q !== B && inside(Q, w)); });
+    if (!coaxial && !endBuried && f[0] < 0.25 && f[N - 1] < 0.25 && Math.max(...f.slice(1, N - 1)) > 0.6) { out.crossing.push([B, A]); return; }
     if (frac >= 0.75) {
       // how far B sticks out of A: largest distance of B's corners beyond A's faces
       let stick = 0;
@@ -219,8 +225,25 @@ export function geometryIssues(model) {
       }
     }
   };
+  // EDGE: a block stacked on a similar block (trunk segments) whose bottom corners stick out
+  // past the block below — turned or shifted so the corners show (looks broken)
+  const edge = (A, B) => {
+    if (A.tilt > 25 || B.tilt > 25 || B.position[1] <= A.position[1]) return;
+    const bottom = B.position[1] - B.size[1] / 2 * Math.abs(B.R[1][1]), top = A.position[1] + A.size[1] / 2 * Math.abs(A.R[1][1]);
+    if (Math.abs(bottom - top) > Math.min(A.size[1], B.size[1]) * 0.5) return;
+    const areaA = A.size[0] * A.size[2], areaB = B.size[0] * B.size[2];
+    if (areaB > areaA * 1.15 || areaB < areaA * 0.35) return; // a cap or a much smaller part is fine
+    if (Math.min(A.size[0], A.size[2], B.size[0], B.size[2]) < 0.8) return; // small details
+    let worst = 0;
+    for (const sx of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) {
+      const l = local(A, world(B, [sx * B.size[0], -0.5 * B.size[1], sz * B.size[2]]));
+      worst = Math.max(worst, Math.abs(l[0]) - A.size[0] / 2, Math.abs(l[2]) - A.size[2] / 2);
+    }
+    if (worst > 0.08) out.edge.push([B, A, worst]);
+  };
   for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
     const A = P[i], B = P[j];
+    if (overlap(A, B)) { edge(A, B); edge(B, A); }
     if (!overlap(A, B) && ![0, 1, 2].every((q) => A.min[q] <= B.max[q] + 0.02 && B.min[q] <= A.max[q] + 0.02)) continue;
     zf(A, B);
     if (!overlap(A, B)) continue;

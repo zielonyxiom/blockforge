@@ -63,7 +63,8 @@ export function rootParts({ position = [0, 0], ground = 0, trunkWidth = 2, sprea
 // get thinner and smaller toward a pointed tip, turning a little as they go (a low star).
 // Sizes are in stem widths w: [distance from the axis, long side, thickness, short side].
 const SUNFLOWER_CHAIN = [[0.62, 1.15, 0.34, 0.6], [1.06, 0.75, 0.22, 0.45], [1.37, 0.4, 0.17, 0.3], [1.55, 0.42, 0.13, 0.17]];
-export function sunflowerRoots({ position = [0, 0], ground = 0, trunkWidth = 1.4, spread = 1, count = 4, color = '#4a701d', group = 'Roots', parent } = {}) {
+// buttress: also a chunky sloped slab per root from high on the trunk down into the chain (more volume)
+export function sunflowerRoots({ position = [0, 0], ground = 0, trunkWidth = 1.4, spread = 1, count = 4, buttress = false, color = '#4a701d', group = 'Roots', parent } = {}) {
   const w = trunkWidth, [cx, cz] = position;
   const common = { color, material: 'smooth', variant: '2022 Small Stud', parent: group };
   const parts = [{ kind: 'group', name: group, ...(parent ? { parent } : {}), pivot: [cx, ground, cz] }];
@@ -81,6 +82,12 @@ export function sunflowerRoots({ position = [0, 0], ground = 0, trunkWidth = 1.4
       // long side (X) points outward: rotate X onto the radial direction
       parts.push({ ...common, name: `Root_${i + 1}_${k + 1}`, position: [x, r(ground + (thick * w) / 2), z], size: [r(long * w * (k ? spread : 1)), r(Math.max(0.16, thick * w)), r(short * w)], rotation: [0, r(yaw - 90), 0] });
     });
+    if (buttress) {
+      const d = new THREE.Vector3(0, 0, 1).applyQuaternion(yawQ(base));
+      const A = new THREE.Vector3(cx, ground + 0.95 * w, cz).addScaledVector(d, 0.3 * w);
+      const B = new THREE.Vector3(cx, ground + 0.15 * w, cz).addScaledVector(d, 0.95 * w * spread);
+      parts.push({ ...common, name: `Root_${i + 1}_Buttress`, ...slab(A, B, 0.5 * w, 0.42 * w, ground - 0.05) });
+    }
   }
   return parts;
 }
