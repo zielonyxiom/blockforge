@@ -110,4 +110,31 @@ function X.seat(m)
   end end
   return moved
 end
+-- rescale the whole model (never resize parts) to a target world height, keeping it on its ground point
+function X.rescale(m,target,ground)
+  local function aabb() local lo,hi=math.huge,-math.huge
+    for _,p in ipairs(m:GetDescendants()) do if p:IsA("BasePart") then local c,s=p.CFrame,p.Size/2
+      for x=-1,1,2 do for y=-1,1,2 do for z=-1,1,2 do local w=(c*Vector3.new(s.X*x,s.Y*y,s.Z*z)).Y lo=math.min(lo,w) hi=math.max(hi,w) end end end end end
+    return hi-lo,lo end
+  local h,lo=aabb()
+  m.WorldPivot=CFrame.new(ground.X,lo,ground.Z)
+  m:ScaleTo(m:GetScale()*target/h)
+  for _,p in ipairs(m:GetDescendants()) do if p:IsA("BasePart") then local q=p.Size p.Size=Vector3.new(math.max(q.X,0.2),math.max(q.Y,0.2),math.max(q.Z,0.2)) end end
+  return h,(aabb())
+end
+-- bark detail: raised ridges along each trunk/branch segment (its local Z is its length), knots, optional moss tufts
+function X.bark(g,segs,color,moss)
+  local n=0
+  for i,p in ipairs(segs) do local w,d,L=p.Size.X,p.Size.Y,p.Size.Z
+    if L>0.9 and w>0.55 then
+      for k,side in ipairs({{1,0},{-1,0},{0,1},{0,-1}}) do if (k+i)%2==0 or w>1.2 then
+        local off=Vector3.new(side[1]*(w/2+0.06),side[2]*(d/2+0.06),((k%2)-0.5)*L*0.15)
+        local sz=side[1]~=0 and Vector3.new(0.3,d*0.32,L*0.75) or Vector3.new(w*0.32,0.3,L*0.75)
+        K.part(g,"BarkRidge",p.CFrame*CFrame.new(off),sz,X.shade(color,0.78+0.06*(k%2)),{var=K.WOOD}) n+=1 end end
+      if i%3==0 then K.part(g,"Knot",p.CFrame*CFrame.new(w/2+0.15,0,L*0.2),Vector3.new(0.5,math.min(0.7,d*0.6),0.55),X.shade(color,0.65),{var=K.WOOD}) n+=1 end
+      if moss and i%4==1 then K.part(g,"MossTuft",p.CFrame*CFrame.new(0,d/2+0.12,-L*0.2),Vector3.new(w*0.7,0.3,L*0.35),moss) n+=1 end
+    end
+  end
+  return n
+end
 return X
