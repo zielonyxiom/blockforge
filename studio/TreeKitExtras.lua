@@ -57,7 +57,7 @@ function X.finish(ctx)
   local A=require(game.ServerStorage.TreeAudit:Clone())
   ctx.model.Parent=workspace
   for _,p in ipairs(ctx.model:GetDescendants()) do if p:IsA("BasePart") then local s=p.Size p.Size=Vector3.new(math.max(s.X,0.2),math.max(s.Y,0.2),math.max(s.Z,0.2)) end end
-  A.fix(ctx.model) if #A.floating(ctx.model)<=6 then A.attach(ctx.model) end A.fix(ctx.model) -- big loose chunks are a design bug: report, don't drag
+  A.fix(ctx.model) X.seat(ctx.model) if #A.floating(ctx.model)<=6 then A.attach(ctx.model) end A.fix(ctx.model) -- big loose chunks are a design bug: report, don't drag
   local _,s=ctx.model:GetBoundingBox()
   return A.audit(ctx.model)..string.format(" size %.1fx%.1fx%.1f",s.X,s.Y,s.Z)
 end
@@ -87,5 +87,27 @@ function X.roots2(g,base,w,color,count,spread,r0,h0,flare)
     local p3=base+Vector3.new(0,tipY,0)+d*(r0+L)+side*(L*0.18*((i%2)*2-1))
     K.tube(g,"Root",K.bezier(p0,p1,p2,p3,4),t0,t1,X.shade(color,long and 1 or 0.92),o)
   end
+end
+-- seat: clusters that stand on the real ground but aren't linked to the tree get sunk (as one piece) below the
+-- tree's lowest point, so TreeAudit counts them as grounded; floating clusters up in the air are left alone (real bugs)
+function X.seat(m)
+  local A=require(game.ServerStorage.TreeAudit:Clone())
+  local function bottom(p) local c=p.CFrame local h=p.Size/2 return p.Position.Y-(math.abs(c.RightVector.Y)*h.X+math.abs(c.UpVector.Y)*h.Y+math.abs(c.LookVector.Y)*h.Z) end
+  local fl=A.floating(m) if #fl==0 then return 0 end
+  local isF={} for _,p in ipairs(fl) do isF[p]=true end
+  local low=math.huge for _,p in ipairs(m:GetDescendants()) do if p:IsA("BasePart") then low=math.min(low,bottom(p)) end end
+  local rp=RaycastParams.new() rp.FilterType=Enum.RaycastFilterType.Exclude rp.FilterDescendantsInstances={m}
+  local o=OverlapParams.new() o.FilterType=Enum.RaycastFilterType.Include o.FilterDescendantsInstances={m}
+  local done,moved={},0
+  for _,p in ipairs(fl) do if not done[p] then
+    local cl,q={p},{p} done[p]=true
+    while #q>0 do local x=table.remove(q) for _,y in ipairs(workspace:GetPartsInPart(x,o)) do if isF[y] and not done[y] then done[y]=true table.insert(cl,y) table.insert(q,y) end end end
+    local mb,mp=math.huge,nil for _,x in ipairs(cl) do local b=bottom(x) if b<mb then mb,mp=b,x end end
+    local hit=workspace:Raycast(mp.Position,Vector3.new(0,-200,0),rp)
+    if hit and mb<=hit.Position.Y+0.12 then
+      local dy=mb-(low+0.12)
+      for _,x in ipairs(cl) do x.CFrame-=Vector3.new(0,dy,0) end moved+=1 end
+  end end
+  return moved
 end
 return X
