@@ -4,6 +4,28 @@ This is the exact method used for the knight, Erdtree, rocket, teapot, Halloween
 An agent with the **Roblox Studio MCP** (`execute_luau`, `screen_capture`, `list_roblox_studios`) can follow it 1:1.
 Trees are built directly in Studio with Luau scripts. No BlockForge scan is needed for these.
 
+## Connections (MCP servers) and the project
+
+| Connection | What for | How to get it |
+|---|---|---|
+| **Roblox Studio MCP** (`mcp__Roblox_Studio__*`) | **Main tool for trees.** `execute_luau` builds in Studio, `screen_capture` checks visually, `list_roblox_studios`, `get_studio_state` | Studio → Assistant settings → enable the MCP server; Studio must be open with "MTF BUILD PLACE.rbxl" |
+| **BlockForge MCP** (`mcp__blockforge__*`) | Picture → model pipeline (scan, mesh_slices, build, render_vs_picture, export_roblox / export_studio) | `npm run mcp:install` (registers `node mcp/mcp-server.js`); run `start.bat` so the editor is open at http://localhost:5177 |
+| Blender MCP | Only for mesh work BlockForge can't do | optional |
+
+- **Picture → tree (user gives an image):** BlockForge flow. `new_project` → `generate_mesh` (often out of free HF quota: build without a scan) → `mesh_slices` → `add_parts` → `polish_model` → `render_vs_picture` → fix → `export_studio` → run the Luau in Studio with `execute_luau`.
+  Rules: `docs/TREE_DESIGN_RULES.md`, house style `training/STYLE.md`, templates `training/studio-trees/`.
+- **Idea → tree (concept trees, bundles):** this guide. Build directly in Studio with TreeKit (faster and better for object/creature trees).
+- **Memory:** keep a list of the user's corrections (section 5) and add every new one. The user hates repeated mistakes.
+
+## How I work (follow the same loop)
+
+1. Say the idea in one line, check it isn't a repeat, pick a ground spot.
+2. Build the whole tree in one script, then audit.
+3. Fix the audit to 0/0/0/0, take a screenshot, and judge it honestly: silhouette readable? back side done? base scene? messy?
+4. Fix what looks bad (rebuild the part, don't patch over it), rescale, back it up.
+5. Short status to the user after each tree or pack. On new feedback: fix it, then add the lesson to section 5 / memory.
+6. If Studio disconnects (`No Roblox Studio instances`), wait and `list_roblox_studios` again. Trees already built stay; re-verify with an audit loop over all of them.
+
 ## 0. Setup (once per Studio session)
 
 1. `list_roblox_studios`: pick "MTF BUILD PLACE.rbxl" and use its `studio_id`. It changes when Studio restarts, so list again if a call fails.

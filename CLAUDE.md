@@ -1,0 +1,1 @@
+- Building trees directly in Roblox Studio (concept trees, bundles): docs/STUDIO_TREE_GUIDE.md — read it fully first; helpers in studio/*.lua, rules in docs/TREE_DESIGN_RULES.md.
