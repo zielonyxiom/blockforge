@@ -6,7 +6,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { MeshRef } from './mesh.js';
-import { exportRbxmx } from './roblox.js';
+import { exportRbxmx, exportLuau } from './roblox.js';
 
 const MATERIAL_LIST = ['smooth', 'plastic', 'neon', 'metal', 'glass', 'wood', 'woodplanks', 'slate', 'concrete', 'brick', 'granite',
   'marble', 'cobblestone', 'fabric', 'grass', 'sand', 'ice', 'foil', 'diamondplate', 'corrodedmetal', 'forcefield'];
@@ -194,6 +194,28 @@ function studMaterials(color, kind, size, allFaces = false) {
   return [side, side, mk('studs'), mk('inlet'), side, side];
 }
 
+// House style: the game's 4 side-face decals (black vertical alpha gradient, 85 % transparent)
+// darken each side face toward its bottom by up to ~15 %.
+const GRADIENT_TEX = (() => {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 64;
+  const g = c.getContext('2d'), grad = g.createLinearGradient(0, 0, 0, 64);
+  grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#d9d9d9');
+  g.fillStyle = grad; g.fillRect(0, 0, 4, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const houseCache = new Map();
+function houseMaterials(color, kind, decals) {
+  const top = materialFor(color, kind);
+  if (!decals) return top;
+  const key = `${color}|${kind}`;
+  if (!houseCache.has(key)) { const m = top.clone(); m.map = GRADIENT_TEX; houseCache.set(key, m); }
+  const side = houseCache.get(key);
+  return [side, side, top, top, side, side]; // +x, -x, top, bottom, +z, -z
+}
+
 // Builds a THREE object tree for a model. Group objects sit at their pivot;
 // children are offset by (absolute position - parent pivot).
 function buildModelObject(model, { edges = true } = {}) {
@@ -208,7 +230,9 @@ function buildModelObject(model, { edges = true } = {}) {
         obj.position.set(p.pivot[0] - pp[0], p.pivot[1] - pp[1], p.pivot[2] - pp[2]);
       } else {
         const studs = String(model.style).startsWith('studs') && (p.shape || 'box') === 'box' && !['neon', 'glass', 'forcefield', 'ice'].includes(p.material);
-        obj = new THREE.Mesh(GEO[p.shape] || GEO.box, studs ? studMaterials(p.color, p.material, p.size, model.style === 'studs_all') : materialFor(p.color, p.material));
+        const house = model.style === 'house' && (p.shape || 'box') === 'box' && !['neon', 'glass', 'forcefield'].includes(p.material);
+        obj = new THREE.Mesh(GEO[p.shape] || GEO.box, studs ? studMaterials(p.color, p.material, p.size, model.style === 'studs_all')
+          : house ? houseMaterials(p.color, p.material, p.gradientDecals !== false) : materialFor(p.color, p.material));
         obj.position.set(p.position[0] - pp[0], p.position[1] - pp[1], p.position[2] - pp[2]);
         obj.scale.set(...p.size);
         if (edges && p.material !== 'glass') obj.add(new THREE.LineSegments(EDGES[p.shape] || EDGES.box, edgeMat));
@@ -493,7 +517,7 @@ function meshSheet(views) {
 function compareSheet(views) {
   views = views?.length ? views : ALL_VIEWS;
   const T = 384;
-  const iou = {};
+  const iou = {}, cover = {};
   const image = studio(() => {
     const box = unionBounds();
     const tiles = [];
@@ -504,9 +528,10 @@ function compareSheet(views) {
       const mB = shoot(v, box, T, 'model', true).getContext('2d').getImageData(0, 0, T, T).data;
       const mctx = model.getContext('2d');
       const img = mctx.getImageData(0, 0, T, T);
-      let inter = 0, uni = 0;
+      let inter = 0, uni = 0, scanPx = 0;
       for (let i = 0; i < mA.length; i += 4) {
         const a = mA[i] > 128, b = mB[i] > 128;
+        if (a) scanPx++;
         if (a || b) uni++;
         if (a && b) inter++;
         else if (a) { img.data[i] = img.data[i] * 0.3 + 230 * 0.7; img.data[i + 1] *= 0.3; img.data[i + 2] *= 0.3; }
@@ -514,12 +539,13 @@ function compareSheet(views) {
       }
       mctx.putImageData(img, 0, 0);
       iou[v] = uni ? Math.round((inter / uni) * 1000) / 1000 : 1;
+      cover[v] = scanPx ? Math.round((inter / scanPx) * 1000) / 1000 : 1; // share of the scan's silhouette the model fills
       tiles.push({ canvas: scan, text: `SCAN ${VIEW_LABEL[v] || v}`, w: 230 });
       tiles.push({ canvas: model, text: `MODEL ${v} IoU ${iou[v].toFixed(2)}`, w: 230 });
     }
     return sheetOf(tiles, 4, T);
   });
-  return { image, iou };
+  return { image, iou, cover };
 }
 
 // ---- Local auto-orient: match the picture's cut-out against the scan at 4 yaws ----
@@ -597,16 +623,18 @@ function bboxOf(canvas, test) {
 const maskIoU = (a, b) => { let i = 0, u = 0; for (let k = 0; k < N * N; k++) { if (a.mask[k] || b.mask[k]) u++; if (a.mask[k] && b.mask[k]) i++; } return i / (u || 1); };
 
 // Search yaw/pitch so the scan's silhouette matches the picture's cut-out.
-async function matchPhoto(url) {
-  await requireMesh();
+// subject 'model' (no scan): fit the camera to the model's silhouette instead of the scan's.
+async function matchPhoto(url, subject = 'mesh') {
+  if (subject === 'mesh') await requireMesh();
+  else if (!hasCubes()) throw new Error('the model is empty');
   const ref = normalizedTile(await imageCanvas(url), (d, o) => d[o + 3] > 128);
   // AI pictures often use a wide lens, so the lens (fov) is searched too; otherwise the
   // matcher fakes the perspective with a wrong yaw.
   let best = { yaw: 0, pitch: 10, fov: 30, score: -1 };
   studio(() => {
-    const box = meshBounds();
+    const box = subject === 'mesh' ? meshBounds() : modelBounds();
     const test = (yaw, pitch, fov) => {
-      const t = normalizedTile(shoot({ yaw, pitch, fov }, box, 160, 'mesh', true), (d, o) => d[o] > 128);
+      const t = normalizedTile(shoot({ yaw, pitch, fov }, box, 160, subject, true), (d, o) => d[o] > 128);
       const s = maskIoU(ref, t);
       if (s > best.score) best = { yaw, pitch, fov, score: s };
     };
@@ -618,6 +646,33 @@ async function matchPhoto(url) {
     for (let yaw = b.yaw - 2; yaw <= b.yaw + 2; yaw += 1) for (let pitch = b.pitch - 2; pitch <= b.pitch + 2; pitch += 1) test(yaw, pitch, b.fov);
   });
   return { yaw: best.yaw, pitch: best.pitch, fov: best.fov, score: Math.round(best.score * 1000) / 1000 };
+}
+
+// Fallback cut-out without the AI background remover: flood-fill the background from the
+// picture's border through smooth color changes (sky gradients) and sky/grass-like colors.
+async function localCutout(url) {
+  const c = await imageCanvas(url);
+  const W = c.width, H = c.height, g = c.getContext('2d', { willReadFrequently: true });
+  const img = g.getImageData(0, 0, W, H), d = img.data;
+  const bgLike = (o) => { const r = d[o], gg = d[o + 1], b = d[o + 2]; return (b > r + 25 && b >= gg) || (gg > r + 20 && gg > b + 10) || (r > 225 && gg > 225 && b > 225); };
+  const bg = new Uint8Array(W * H), stack = [];
+  const push = (i) => { if (!bg[i]) { bg[i] = 1; stack.push(i); } };
+  for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+  for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+  while (stack.length) {
+    const i = stack.pop(), x = i % W, y = (i / W) | 0, o = i * 4;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const X = x + dx, Y = y + dy;
+      if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+      const j = Y * W + X, q = j * 4;
+      if (bg[j]) continue;
+      const step = Math.abs(d[q] - d[o]) + Math.abs(d[q + 1] - d[o + 1]) + Math.abs(d[q + 2] - d[o + 2]);
+      if (step < 24 || bgLike(q)) push(j);
+    }
+  }
+  for (let i = 0; i < W * H; i++) if (bg[i]) d[i * 4 + 3] = 0;
+  g.putImageData(img, 0, 0);
+  return c.toDataURL('image/png');
 }
 
 // [your picture | model from the picture's camera | difference]. The model render is lined up
@@ -1098,7 +1153,10 @@ function applyMesh(mesh) {
     return;
   }
   S.meshLoading = meshRef.load(mesh.url, mesh)
-    .then(() => { meshRef.ghost = $('#chkGhost').checked; meshRef.applyGhost(); })
+    .then(() => {
+      meshRef.ghost = $('#chkGhost').checked; meshRef.applyGhost();
+      if (meshRef.groundRemoved) addLog({ kind: 'info', text: `Cut a flat ground plate off the 3D scan (${meshRef.groundRemoved} triangles under the model).`, time: Date.now() });
+    })
     .catch((e) => addLog({ kind: 'error', text: '3D scan failed to load: ' + e.message, time: Date.now() }));
 }
 async function requireMesh() {
@@ -1124,14 +1182,17 @@ async function handleBrowserRequest({ id, op, args = {} }) {
       case 'compare': await requireMesh(); result = compareSheet(args.views); break;
       case 'yaw_sheet': await requireMesh(); result = { image: yawSheet() }; break;
       case 'auto_orient': await requireMesh(); result = await autoOrient(args.url); break;
-      case 'match_photo': result = await matchPhoto(args.url); break;
+      case 'match_photo': result = await matchPhoto(args.url, args.subject); break;
+      case 'local_cutout': result = { image: await localCutout(args.url) }; break;
       case 'picture_compare': await S.meshLoading; result = await pictureCompare(args.url, args.cam); break;
       case 'polish': result = await polishModel(args); break;
       case 'picture_colors': result = await pictureColors(args); break;
       case 'mesh_info': await requireMesh(); result = meshRef.info(); break;
       case 'slices': await requireMesh(); result = { text: meshRef.slices(args) }; break;
       case 'blockify': await requireMesh(); result = meshRef.blockify(args); break;
+      case 'tree_skeleton': await requireMesh(); result = meshRef.treeSkeleton(args); break;
       case 'export_rbxmx': result = exportRbxmx(S.model, buildModelObject); break;
+      case 'export_luau': result = { lua: exportLuau(S.model, buildModelObject, args) }; break;
       default: throw new Error(`Unknown browser op ${op}`);
     }
     await api('/api/browser-result', { id, result });
@@ -1491,7 +1552,9 @@ async function openSettings() {
 
     <h3 style="margin-top:6px">🧊 3D scan (Hugging Face, free)</h3>
     ${field('HF_TOKEN', 'Hugging Face token (free, recommended)', 'password', 'huggingface.co/settings/tokens → New token (Read). Gives far more free GPU time for 3D scans.')}
-    <div class="field"><label class="lbl">3D scan model</label>${select('MESH_BACKEND', [['trellis', 'TRELLIS (fast)'], ['trellis2', 'TRELLIS.2 (detailed)'], ['hunyuan3d', 'Hunyuan3D-2']])}</div>
+    <div class="field"><label class="lbl">3D scan model</label>${select('MESH_BACKEND', [['trellis', 'TRELLIS (fast)'], ['trellis2', 'TRELLIS.2 (detailed)'], ['hunyuan3d', 'Hunyuan3D-2'], ['hunyuan21', 'Hunyuan3D-2.1 (sharpest, best for stud trees; needs HF token + 270 s GPU quota)'], ['sam3d', 'SAM 3D Objects (Meta, needs HF token + 270 s GPU quota)'], ['comfyui', 'Local ComfyUI — Hunyuan3D-2 on your GPU (no quota, shape only)']])}</div>
+    <div data-mesh="comfyui">${field('COMFYUI_URL', 'ComfyUI address')}${field('COMFYUI_3D_MODEL', 'Hunyuan3D checkpoint', 'text', 'In ComfyUI/models/checkpoints. hunyuan3d-dit-v2-mv-turbo_fp16.safetensors (4.9 GB, multi-view, fits 8 GB GPUs) or hunyuan_3d_v2.1.safetensors (7.4 GB).')}</div>
+    <div data-mesh="sam3d">${field('SAM3D_PROMPT', 'SAM 3D: what to segment', 'text', 'Short noun phrase SAM 3 looks for in the picture, e.g. "object", "tree", "horse".')}</div>
     <p class="muted small">Saved to the .env file in the app folder.</p>
     <div class="actions"><button value="cancel">Cancel</button><button value="save" class="primary">Save</button></div>`,
   async () => {
@@ -1502,8 +1565,10 @@ async function openSettings() {
     const llm = dlgForm.querySelector('[name=LLM_PROVIDER]').value, img = dlgForm.querySelector('[name=IMAGE_PROVIDER]').value;
     dlgForm.querySelectorAll('[data-llm]').forEach((el) => (el.hidden = el.dataset.llm !== llm));
     dlgForm.querySelectorAll('[data-img]').forEach((el) => (el.hidden = el.dataset.img !== img));
+    const mesh = dlgForm.querySelector('[name=MESH_BACKEND]').value;
+    dlgForm.querySelectorAll('[data-mesh]').forEach((el) => (el.hidden = el.dataset.mesh !== mesh));
   };
-  dlgForm.querySelectorAll('[name=LLM_PROVIDER],[name=IMAGE_PROVIDER]').forEach((el) => (el.onchange = sync));
+  dlgForm.querySelectorAll('[name=LLM_PROVIDER],[name=IMAGE_PROVIDER],[name=MESH_BACKEND]').forEach((el) => (el.onchange = sync));
   sync();
   $('#btnLoadModels').onclick = async () => {
     try {

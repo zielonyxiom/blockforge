@@ -4,8 +4,9 @@
 // The app must be running (npm start) and the editor open in a browser for renders.
 import { loadConfig } from '../server/config.js';
 import { MODEL_TOOLS, RENDER_TOOL, SCAN_TOOLS } from '../server/model.js';
-import { BUILDER_SYSTEM, SCAN_GUIDE, PICTURE_RULES } from '../server/prompts.js';
+import { BUILDER_SYSTEM, SCAN_GUIDE, PICTURE_RULES, treeRules, isTreeSubject } from '../server/prompts.js';
 import { ROBLOX_RULES, PRESETS, presetOf } from '../server/roblox.js';
+import { MESH_BACKENDS } from '../server/mesh3d.js';
 
 const cfg = loadConfig();
 const BASE = process.env.BLOCKFORGE_URL || `http://127.0.0.1:${cfg.PORT}`;
@@ -13,8 +14,8 @@ const BASE = process.env.BLOCKFORGE_URL || `http://127.0.0.1:${cfg.PORT}`;
 const EXTRA_TOOLS = [
   {
     name: 'get_build_guide',
-    description: 'Read the modeling guide: coordinate system, conventions and workflow for rebuilding a model from references. Read this before building.',
-    input_schema: { type: 'object', properties: {} },
+    description: 'Read the modeling guide: coordinate system, conventions and workflow for rebuilding a model from references. Read this before building. Includes the tree-mode rules (tree_skeleton workflow) when the subject is a tree/bush/plant, or with tree: true.',
+    input_schema: { type: 'object', properties: { tree: { type: 'boolean', description: 'include the tree-mode rules (default: automatic from the subject)' } } },
   },
   {
     name: 'list_references',
@@ -38,8 +39,8 @@ const EXTRA_TOOLS = [
   },
   {
     name: 'generate_mesh',
-    description: 'Turn the main reference image into a textured 3D scan on Hugging Face (TRELLIS / Hunyuan3D, ~20–90 s), auto-aligned to the editor. Unlocks render_comparison, mesh_slices and blockify_mesh.',
-    input_schema: { type: 'object', properties: {} },
+    description: 'Turn the main reference image into a textured 3D scan on Hugging Face (~20 s–4 min), auto-aligned to the editor. Unlocks render_comparison, mesh_slices, tree_skeleton and blockify_mesh. backend overrides the Settings choice for this one scan: trellis (fast), trellis2 (detailed), hunyuan3d, hunyuan21 (Hunyuan3D-2.1, sharper; asks for 270 s of ZeroGPU quota), sam3d (Meta SAM 3D Objects; asks for 270 s), comfyui (local ComfyUI Hunyuan3D-2 on your GPU, no quota, shape only; uses back/left/right references too).',
+    input_schema: { type: 'object', properties: { backend: { type: 'string', enum: MESH_BACKENDS } } },
   },
   {
     name: 'set_mesh_transform',
@@ -48,7 +49,7 @@ const EXTRA_TOOLS = [
   },
   {
     name: 'new_project',
-    description: 'Create and open a new empty project (also sets the subject). preset = Roblox style: roblox_smooth (modern, default), roblox_studs (classic studs/LEGO), roblox_lowpoly (trending stylized), custom.',
+    description: 'Create and open a new empty project (also sets the subject). preset = Roblox style: roblox_smooth (modern, default), roblox_studs (classic studs/LEGO), roblox_lowpoly (trending stylized), roblox_house (the game own look: 2022 MaterialVariants + gradient decals, free sizes and tilts), custom.',
     input_schema: { type: 'object', properties: { name: { type: 'string' }, preset: { type: 'string', enum: Object.keys(PRESETS) } }, required: ['name'] },
   },
   {
@@ -86,14 +87,15 @@ async function callTool(name, args = {}) {
     case 'get_build_guide': {
       const st = await http('/api/state');
       const preset = presetOf(st.project?.preset);
-      return text(`${BUILDER_SYSTEM}\n\n${ROBLOX_RULES}\n\n${preset.rules}\n\n${PICTURE_RULES}\n\n${SCAN_GUIDE}\n(The scan tools only work after generate_mesh or when the project already has a scan.)\nWhen done: export_roblox.`);
+      const tree = args.tree ?? isTreeSubject(`${st.project?.subject || ''} ${st.project?.name || ''}`);
+      return text(`${BUILDER_SYSTEM}\n\n${ROBLOX_RULES}\n\n${preset.rules}\n\n${PICTURE_RULES}\n\n${SCAN_GUIDE}\n(The scan tools only work after generate_mesh or when the project already has a scan.)${tree ? '\n\n' + treeRules(st.project?.preset) : ''}\nWhen done: export_roblox.`);
     }
     case 'set_style_preset': {
       await http('/api/projects/preset', { preset: args.preset });
       return text(`Style preset is now ${PRESETS[args.preset].label}. Read get_build_guide for its rules.`);
     }
     case 'generate_mesh': {
-      const r = await http('/api/gen/mesh', {});
+      const r = await http('/api/gen/mesh', { backend: args.backend });
       return text(`3D scan ready (${r.mesh?.source}, yaw ${r.mesh?.yaw}°, height ${r.mesh?.height} studs). Check it with render_comparison or mesh_slices.`);
     }
     case 'set_mesh_transform': {
@@ -154,7 +156,7 @@ async function handle(msg) {
           protocolVersion: params?.protocolVersion || '2025-06-18',
           capabilities: { tools: {} },
           serverInfo: { name: 'blockforge', version: '0.1.0' },
-          instructions: 'BlockForge is a blocky (Roblox-style) 3D modeler. Typical flow: new_project → generate_references (or use existing) → view_reference "all" → generate_mesh (3D scan via Hugging Face) → get_build_guide → mesh_slices → add_parts / mirror_part → render_comparison + render_views → fix → repeat → roblox_snap (classic studs) → export_roblox. Everything follows Roblox rules (studs, BrickColors, Roblox materials).',
+          instructions: 'BlockForge is a blocky (Roblox-style) 3D modeler. Typical flow: new_project → generate_references (or use existing) → view_reference "all" → generate_mesh (3D scan via Hugging Face) → get_build_guide → mesh_slices (trees: tree_skeleton) → add_parts / mirror_part → render_comparison + render_views → fix → repeat → roblox_snap (classic studs) → export_roblox. Everything follows Roblox rules (studs, BrickColors, Roblox materials).',
         });
       case 'ping': return reply(id, {});
       case 'tools/list':

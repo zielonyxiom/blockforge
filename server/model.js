@@ -8,12 +8,13 @@
 //   Group `pivot` is an absolute point; group `rotation` rotates all children around it.
 //   Rotations are Euler degrees [x, y, z] (XYZ order).
 
-import { ROBLOX_MATERIALS, BRICKCOLORS, snapModel } from './roblox.js';
+import { ROBLOX_MATERIALS, BRICKCOLORS, VARIANTS, snapModel } from './roblox.js';
 
 export const SHAPES = ['box', 'cylinder', 'sphere', 'wedge'];
 export const MATERIALS = Object.keys(ROBLOX_MATERIALS);
 // smooth = no studs · studs = classic stud tops + inlet bottoms · studs_all = studs on every face (inlets below)
-export const STYLES = ['smooth', 'studs', 'studs_all'];
+// house = the game's own look: SmoothPlastic + 2022 MaterialVariants + gradient decals
+export const STYLES = ['smooth', 'studs', 'studs_all', 'house'];
 export const isStuds = (style) => String(style || '').startsWith('studs');
 
 const MAX_HISTORY = 200;
@@ -53,6 +54,11 @@ const BASIC_COLORS = {
   pink: '#ff66cc', brown: '#694028', white: '#f2f3f3', black: '#1b2a35', gray: '#a3a2a5', grey: '#a3a2a5',
   cyan: '#04afec', lime: '#00ff00', gold: '#dcbc81', silver: '#9ca3a8', beige: '#cabfa3', tan: '#d7c59a',
 };
+function variant(v) {
+  const hit = VARIANTS.find((x) => x.toLowerCase() === String(v).trim().toLowerCase());
+  if (!hit) throw new Error(`variant must be one of ${VARIANTS.join(', ')}`);
+  return hit;
+}
 function color(c, fallback) {
   if (c === undefined || c === null) return fallback;
   if (typeof c === 'string') {
@@ -157,6 +163,8 @@ export class ModelStore {
       shape,
       material,
       visible: spec.visible !== false,
+      ...(spec.variant ? { variant: variant(spec.variant) } : {}),
+      ...(spec.gradientDecals !== undefined ? { gradientDecals: !!spec.gradientDecals } : {}),
     };
   }
 
@@ -181,6 +189,8 @@ export class ModelStore {
       if (u.color !== undefined) p.color = color(u.color, p.color);
       if (u.shape !== undefined) { if (!SHAPES.includes(u.shape)) throw new Error('bad shape'); p.shape = u.shape; }
       if (u.material !== undefined) { if (!MATERIALS.includes(u.material)) throw new Error('bad material'); p.material = u.material; }
+      if (u.variant !== undefined) { if (u.variant) p.variant = variant(u.variant); else delete p.variant; }
+      if (u.gradientDecals !== undefined) p.gradientDecals = !!u.gradientDecals;
     }
     // Relative helpers
     if (u.move !== undefined) {
@@ -307,8 +317,9 @@ export class ModelStore {
         return { ok: true, style: cmd.style };
       }
       case 'roblox_snap': {
+        if (this.model.style === 'house' && !cmd.mode) return { mode: 'house', changed: 0, note: 'House style keeps free sizes and tilts: nothing snapped. Pass mode explicitly to force it.' };
         const mode = cmd.mode || (isStuds(this.model.style) ? 'studs' : 'smooth');
-        const changed = snapModel(this.model, { mode, colors: cmd.colors !== false });
+        const changed = snapModel(this.model, { mode, colors: cmd.colors !== false, keepTilt: !!cmd.keep_tilt });
         return { mode, changed };
       }
       case 'load_model': {
@@ -354,7 +365,7 @@ export class ModelStore {
   describe() {
     const m = this.model;
     if (!m.parts.length) return `Model "${m.name}" is empty.`;
-    const lines = [`Model "${m.name}" (${({ studs: 'classic studs on top', studs_all: 'studs on every face', smooth: 'smooth' })[m.style] || 'smooth'} style) — ${m.parts.length} parts. Format: id name [type] ...`];
+    const lines = [`Model "${m.name}" (${({ studs: 'classic studs on top', studs_all: 'studs on every face', smooth: 'smooth', house: 'house (2022 variants + gradient decals)' })[m.style] || 'smooth'} style) — ${m.parts.length} parts. Format: id name [type] ...`];
     const walk = (pid, depth) => {
       for (const p of this.children(pid)) {
         const pad = '  '.repeat(depth);
@@ -363,7 +374,7 @@ export class ModelStore {
           walk(p.id, depth + 1);
         } else {
           const rot = p.rotation.some((x) => x) ? ` rot=${JSON.stringify(p.rotation)}` : '';
-          const extra = (p.shape !== 'box' ? ` shape=${p.shape}` : '') + (p.material !== 'plastic' ? ` mat=${p.material}` : '');
+          const extra = (p.shape !== 'box' ? ` shape=${p.shape}` : '') + (p.material !== 'plastic' ? ` mat=${p.material}` : '') + (p.variant ? ` variant="${p.variant}"` : '') + (p.gradientDecals === false ? ' noDecals' : '');
           lines.push(`${pad}${p.id} ${p.name} pos=${JSON.stringify(p.position)} size=${JSON.stringify(p.size)}${rot} ${p.color}${extra}${p.visible ? '' : ' hidden'}`);
         }
       }
@@ -402,6 +413,8 @@ const PART_PROPS = {
   rotation: { ...V3, description: 'Euler degrees [x,y,z]. For cubes: around the cube center. For groups: around the pivot.' },
   color: { type: 'string', description: 'cube only: hex color "#rrggbb"' },
   shape: { type: 'string', enum: SHAPES, description: 'cube only: box (default), cylinder (axis = Y), sphere (ellipsoid fitting size), wedge (ramp: full height at -Z, slopes down to +Z)' },
+  variant: { type: 'string', enum: [...VARIANTS, ''], description: 'cube only, house style: Roblox MaterialVariant written on export ("" = automatic: "2022 Small Stud" for wood-colored parts, else "2022 Small Universal")' },
+  gradientDecals: { type: 'boolean', description: 'cube only, house style: add the 4 side-face shading decals on export (default true)' },
   material: { type: 'string', enum: MATERIALS, description: 'cube only: Roblox material. smooth = SmoothPlastic (default in smooth style), plastic (default in studs style), neon glows, glass is translucent, plus wood, woodplanks, slate, concrete, brick, granite, marble, cobblestone, fabric, grass, sand, ice, foil, diamondplate, corrodedmetal, forcefield' },
 };
 
@@ -460,7 +473,7 @@ export const MODEL_TOOLS = [
   },
   {
     name: 'set_surface_style',
-    description: 'How part surfaces look and export to Roblox: smooth (no studs), studs (classic: studs on top, inlets below), studs_all (studs on every face, like stud-covered brick art).',
+    description: 'How part surfaces look and export to Roblox: smooth (no studs), studs (classic: studs on top, inlets below), studs_all (studs on every face, like stud-covered brick art), house (the game style: SmoothPlastic + 2022 MaterialVariant + 4 gradient decals per part, free sizes and tilts).',
     input_schema: { type: 'object', properties: { style: { type: 'string', enum: STYLES } }, required: ['style'] },
   },
   {
@@ -468,7 +481,10 @@ export const MODEL_TOOLS = [
     description: 'Clean the whole model up to Roblox rules. mode "studs" (classic): X/Z sizes to whole studs, heights to plate 0.4 / brick-style steps, positions onto the stud grid, rotations to 90°, Plastic material, classic BrickColors. mode "smooth": sizes/positions to a 0.05-stud grid and colors to the nearest BrickColor. Defaults to the model\'s style. Check with a render afterwards.',
     input_schema: {
       type: 'object',
-      properties: { mode: { type: 'string', enum: ['studs', 'smooth'] }, colors: { type: 'boolean', description: 'snap colors to BrickColors (default true)' } },
+      properties: {
+        mode: { type: 'string', enum: ['studs', 'smooth'] }, colors: { type: 'boolean', description: 'snap colors to BrickColors (default true)' },
+        keep_tilt: { type: 'boolean', description: 'studs mode: parts rotated off the 90° grid (tree branches, roots) keep their angle and position; only sizes snap' },
+      },
     },
   },
 ];
@@ -495,8 +511,8 @@ export const SCAN_TOOLS = [
   },
   {
     name: 'render_vs_picture',
-    description: 'THE 1:1 CHECK. Renders your model from the same camera angle as the original picture (found automatically) and lines it up with the picture: [your picture | model | difference]. RED = in the picture but missing from the model, BLUE = in the model but not in the picture. Returns IoU vs the picture. Use it after every batch of changes; compare details (stud counts, part edges, colors) directly against the picture.',
-    input_schema: { type: 'object', properties: {} },
+    description: 'THE 1:1 CHECK. Renders your model from the same camera angle as the original picture (found automatically) and lines it up with the picture: [your picture | model | difference]. RED = in the picture but missing from the model, BLUE = in the model but not in the picture. Returns IoU vs the picture. Use it after every batch of changes; compare details (stud counts, part edges, colors) directly against the picture. Works without a 3D scan too: the picture is cut out and its camera is matched against your model once (rematch: true fits it again after big changes).',
+    input_schema: { type: 'object', properties: { rematch: { type: 'boolean', description: 'no-scan mode: match the picture camera to the model again' } } },
   },
   {
     name: 'render_comparison',
@@ -511,6 +527,94 @@ export const SCAN_TOOLS = [
       properties: {
         axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'default y' },
         count: { type: 'number', description: 'number of slabs (default 16, max 40)' },
+      },
+    },
+  },
+  {
+    name: 'tree_skeleton',
+    description: 'TREE MODE. Analyzes the 3D scan of a tree: splits it into wood (trunk, branches, roots — found by the color of the trunk base, any palette) and canopy, and returns the trunk axis per height, trunk sections (stacked boxes), branch segments (start/end/thickness + a ready rotated box), canopy clusters (bounding boxes + fill + color) and accents (flowers/fruit). add: true also places a draft of those boxes in a "Tree" group.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        res: { type: 'number', description: 'voxels along the longest side (24–64, default 48)' },
+        clusters: { type: 'number', description: 'force this many canopy clusters (default: automatic)' },
+        add: { type: 'boolean', description: 'also add the draft boxes to the model (group "Tree")' },
+      },
+    },
+  },
+  {
+    name: 'add_detail',
+    description: 'Adds DESIGNED details (each a small group of parts, no plain boxes): leaf (pointed curling leaf on a stem), sprig (3 small leaves), fruit (rounded fruit + stem + leaf), flower (center + petal ring), crystal (cluster of pointed shards), studded_plate (plate with 2×2 studs), ornament (hanging ball + cap), lantern (glowing core + caps), spot (round flat dot), drip (hanging icicle/drip), star (5-point star), mushroom (stem + cap + spots), bolt (glowing zig-zag lightning), banana (small hanging banana). Either items: [{kind, position, normal, roll, size, colors}] (normal = the direction it sticks out of the surface), or scatter: {on: group/name prefix/color, count, faces: side|top|bottom|all} to spread them evenly ALL AROUND the tree on free outward faces (back and sides get as many as the front). colors: {color, leaf, stem, center, cap, frame, colors: [..] for crystals}.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['leaf', 'sprig', 'fruit', 'flower', 'crystal', 'studded_plate', 'ornament', 'lantern', 'spot', 'drip', 'star', 'mushroom', 'bolt', 'banana'] },
+        size: { type: 'number' },
+        colors: { type: 'object' },
+        items: { type: 'array', items: { type: 'object' } },
+        scatter: { type: 'object', properties: { on: { type: 'string' }, count: { type: 'number' }, faces: { type: 'string', enum: ['side', 'top', 'bottom', 'all'] } } },
+        group: { type: 'string' }, parent: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'scale_model',
+    description: 'Scale the whole model uniformly, keeping it standing on the ground: height = target height in studs (grown trees in the game are ~20–23 tall), or factor.',
+    input_schema: { type: 'object', properties: { height: { type: 'number' }, factor: { type: 'number' } } },
+  },
+  {
+    name: 'vary_shades',
+    description: 'Makes big same-colored areas look alive: nudges the brightness of each matching part by up to ±amount (default 0.04 = 4%) in a fixed pattern. Filter by color (hex) and/or group name prefix.',
+    input_schema: { type: 'object', properties: { color: { type: 'string' }, group: { type: 'string' }, amount: { type: 'number' } } },
+  },
+  {
+    name: 'export_studio',
+    description: 'Write a Luau script that builds this model directly in Roblox Studio (same parts, CFrames, colors, MaterialVariants and gradient decals as export_roblox). Run the script with the Studio MCP execute_luau tool. position = [x, y, z] in the place (it stands the model on the ground there); name = the Model name (an existing model with that name is replaced).',
+    input_schema: { type: 'object', properties: { name: { type: 'string' }, position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 } } },
+  },
+  {
+    name: 'check_geometry',
+    description: 'CLEAN GEOMETRY CHECK. Finds parts that look ugly in Roblox: CROSSING (a part goes through another and out the far side, e.g. a vine cutting through a trunk), POKE (barely sticks out < 0.12), HIDDEN (fully inside another part, invisible) and Z-FIGHT (flush coplanar faces that flicker). Normal overlaps (plates sunk into cores, branches into trunks) are fine. fix: true deletes hidden parts and nudges z-fighting ones by 0.03. Run it before every export.',
+    input_schema: { type: 'object', properties: { fix: { type: 'boolean' } } },
+  },
+  {
+    name: 'style_check',
+    description: 'HOUSE STYLE CHECK. Analyzes the structure of your model (trunk segments, bare-trunk height, collar, roots and their directions/slope, canopy start, blobs and face plates, footprint, tilted share, details front/back, thin parts) and compares every number with the statistics of the 50 hand-made trees of the game. ✗ lines say what to change.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'check_sides',
+    description: 'ALL-SIDES CHECK. The picture shows one side; this checks the others. Compares your model with the 3D scan from front, back, left and right (share of the scan silhouette you cover per side, image), plus depth/width and parts ≤0.15 thick (glitchy strips). Tells you what to fix: a missing back, flat sides, thin strips. render_vs_picture includes the short version.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'tree_roots',
+    description: 'Adds house-style tree roots around a trunk base, scaled to the trunk width. style "sunflower" (default, copied from the Sunflower tree of the game): a ring of 4 low collar blocks and 4 flat roots, each a chain of slabs on the ground tapering to a point and curving a little; simple and clean. style "slabs": collar + step and 6 two-part tilted roots (45–58° slab + ~18° tip). Get position/width from tree_skeleton (trunk section 1) or your trunk.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        position: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: '[x, z] of the trunk base center (default [0,0])' },
+        trunk_width: { type: 'number', description: 'trunk width at the base in studs (default 2)' },
+        spread: { type: 'number', description: 'root length factor: 1 = the game recipe, 0.6 = short feet, 1.3 = long crawling roots; match the picture' },
+        style: { type: 'string', enum: ['sunflower', 'slabs'], description: 'default sunflower' },
+        count: { type: 'number', description: 'sunflower style: number of roots (default 4; 5–6 for big trees)' },
+        buttress: { type: 'boolean', description: 'sunflower style: add a chunky sloped slab per root from the trunk down into it (more volume for big trunks)' },
+        ground: { type: 'number', description: 'ground height (default 0)' },
+        color: { type: 'string', description: 'trunk color (default #5a3f2e)' },
+        group: { type: 'string', description: 'group name (default "Roots")' },
+        parent: { type: 'string', description: 'parent group, e.g. your tree group' },
+      },
+    },
+  },
+  {
+    name: 'tree_template',
+    description: 'HOUSE-STYLE TREES. The game\'s 50 hand-made trees (training/studio-trees) as templates. Without file: lists them (size, part count, colors). With file: outlines that tree (groups, parts, sizes, rotations, variants) so you can copy its construction. add: true imports it into the model scaled to `height` (default: the 3D scan\'s height, else its own size) as a starting point; then reshape it to the picture.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'template file or name from the list, e.g. "blue_tree"' },
+        add: { type: 'boolean', description: 'import it into the model (group "Template_<name>")' },
+        height: { type: 'number', description: 'target height in studs for add (default: scan height)' },
       },
     },
   },
@@ -546,7 +650,7 @@ export function runModelTool(store, name, input = {}) {
     case 'duplicate_part': return ok(store.exec({ op: 'duplicate_part', id: input.id, offset: input.offset }, 'tool'));
     case 'clear_model': return ok(store.exec({ op: 'clear_model', name: input.name }, 'tool'));
     case 'set_surface_style': return ok(store.exec({ op: 'set_style', style: input.style }, 'tool'));
-    case 'roblox_snap': return ok(store.exec({ op: 'roblox_snap', mode: input.mode, colors: input.colors }, 'tool'));
+    case 'roblox_snap': return ok(store.exec({ op: 'roblox_snap', mode: input.mode, colors: input.colors, keep_tilt: input.keep_tilt }, 'tool'));
     default: throw new Error(`Unknown tool ${name}`);
   }
 }

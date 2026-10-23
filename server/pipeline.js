@@ -8,14 +8,14 @@ import path from 'node:path';
 import { generateImage, editImage, mimeOf, imageModelName, canEditImages } from './images.js';
 import { imageBlock } from './claude.js';
 import { chat, llmReady, llmName, isFreeProvider } from './llm.js';
-import { generateMesh } from './mesh3d.js';
+import { generateMesh, MESH_BACKENDS } from './mesh3d.js';
 import { MODEL_TOOLS, RENDER_TOOL, SCAN_TOOLS } from './model.js';
 import { config, STYLE_DIR } from './config.js';
 import { ROBLOX_RULES, presetOf, DEFAULT_PRESET } from './roblox.js';
 import {
   DEFAULT_STYLE, REFERENCE_VIEWS, heroPrompt, viewPrompt, partPrompt,
   PLANNER_SYSTEM, PLAN_TOOL, BUILDER_SYSTEM, SCAN_GUIDE, BUDGET_RULES, PICTURE_RULES, FINISH_TOOL, reviewMessage, STYLE_LEARNER_SYSTEM,
-  ORIENT_SYSTEM, ORIENT_TOOL,
+  ORIENT_SYSTEM, ORIENT_TOOL, treeRules, isTreeSubject,
 } from './prompts.js';
 
 const dataUrlBuf = (d) => Buffer.from(d.split(',')[1], 'base64');
@@ -113,14 +113,18 @@ export async function generatePartRefs(ctx, subject, parts, signal) {
 }
 
 // ---- Step 3b: 3D scan (image → 3D on Hugging Face) --------------------------
-export async function generateScan(ctx, signal) {
+// `backend` overrides the MESH_BACKEND setting for this one scan.
+export async function generateScan(ctx, signal, { backend = config.MESH_BACKEND } = {}) {
+  if (!MESH_BACKENDS.includes(backend)) throw new Error(`Unknown 3D scan backend "${backend}" (use ${MESH_BACKENDS.join(', ')})`);
   const refs = ctx.loadRefs(() => true);
   const pick = refs.find((r) => r.view === 'three_quarter') || refs.find((r) => r.view === 'front') || refs[0];
   if (!pick) throw new Error('The 3D scan needs a reference image first (generate or upload one).');
-  ctx.log('info', `Turning "${pick.label}" into a 3D model with ${config.MESH_BACKEND} on Hugging Face…`);
+  ctx.log('info', `Turning "${pick.label}" into a 3D model with ${backend} on Hugging Face…`);
   let cutout = null;
-  const glb = await generateMesh(pick.buf, { backend: config.MESH_BACKEND, signal, log: ctx.log, onCutout: (b) => { cutout = b; } });
-  ctx.saveMesh(glb, { source: config.MESH_BACKEND, yaw: 0, cutout: cutout ? ctx.saveProjectFile('cutout.png', cutout) : null });
+  // other views (back/left/right references) help the multi-view ComfyUI model see the far side
+  const extraViews = Object.fromEntries(['back', 'left', 'right'].map((v) => [v, refs.find((r) => r.view === v)?.buf]).filter(([, b]) => b));
+  const glb = await generateMesh(pick.buf, { backend, signal, log: ctx.log, onCutout: (b) => { cutout = b; }, extraViews });
+  ctx.saveMesh(glb, { source: backend, yaw: 0, cutout: cutout ? ctx.saveProjectFile('cutout.png', cutout) : null });
   // Orientation is a nice-to-have: never let it fail the scan.
   try { await orientScan(ctx, signal); }
   catch (e) {
@@ -221,7 +225,8 @@ export async function buildModel(ctx, { subject, notes, reviewRounds = 2, signal
   const tools = [...MODEL_TOOLS, RENDER_TOOL, ...(scan ? SCAN_TOOLS : []), FINISH_TOOL];
   tools[tools.length - 1] = { ...tools[tools.length - 1], cache_control: { type: 'ephemeral' } };
   const budget = isFreeProvider();
-  const system = [{ type: 'text', text: `${BUILDER_SYSTEM}\n\n${robloxRules(ctx)}${scan ? '\n\n' + SCAN_GUIDE : ''}${ctx.meta().mesh?.cutout ? '\n\n' + PICTURE_RULES : ''}${budget ? '\n\n' + BUDGET_RULES : ''}`, cache_control: { type: 'ephemeral' } }];
+  const tree = scan && isTreeSubject(`${subject || ''} ${ctx.meta().name || ''}`);
+  const system = [{ type: 'text', text: `${BUILDER_SYSTEM}\n\n${robloxRules(ctx)}${scan ? '\n\n' + SCAN_GUIDE : ''}${ctx.meta().mesh?.cutout ? '\n\n' + PICTURE_RULES : ''}${tree ? '\n\n' + treeRules(presetId(ctx)) : ''}${budget ? '\n\n' + BUDGET_RULES : ''}`, cache_control: { type: 'ephemeral' } }];
   const preset = presetOf(presetId(ctx));
   if (ctx.store.model.style !== preset.modelStyle && !(preset.modelStyle === 'studs' && ctx.store.model.style === 'studs_all')) ctx.store.exec({ op: 'set_style', style: preset.modelStyle }, 'tool');
   const messages = [{ role: 'user', content }];

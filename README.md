@@ -72,17 +72,19 @@ Click **Settings** in the app and paste:
 ## ✨ What it does
 
 - 🖼️ **Picture → Roblox model** — a render, an AI image or a screenshot. Click **🖼 Build from my image**.
-- 🧊 **Free 3D scan** — removes the background (BRIA RMBG-2.0) and reconstructs the object in 3D (TRELLIS / TRELLIS.2 / Hunyuan3D-2 on Hugging Face) for exact depth and proportions.
+- 🧊 **Free 3D scan** — removes the background (BRIA RMBG-2.0) and reconstructs the object in 3D (TRELLIS / TRELLIS.2 / Hunyuan3D-2 / Hunyuan3D-2.1 / SAM 3D Objects on Hugging Face, pick one in Settings) for exact depth and proportions.
+- 🔄 **All sides, not just the front** — the picture shows one side, so the builder also builds the back and sides (depth ≈ 0.87× width, mirrored or its own details at the back). `render_vs_picture` / `check_sides` report how much of the scan's back, left and right silhouette the model covers, a flat or shallow model, details only on the front, and glitchy strips ≤ 0.15 thick.
 - 🎯 **Checks itself against your picture** — finds the camera angle and lens the picture was taken with, renders the model from exactly that view and overlays it on your picture (red = missing, blue = extra, plus a match score).
 - ✨ **Auto-polish** — nudges every part's position, size and tilt until the model matches your picture *and* the 3D scan from 5 sides, while keeping the build clean and blocky.
 - 🎨 **Colors from your picture** — reads each material's real color off the picture (lit faces, not shadows).
+- 🌳 **Tree mode** — trees are split into a trunk skeleton, straight branch segments and a few box-shaped canopy clusters (`tree_skeleton`), then built as stacked trunk boxes, rotated branch boxes and layered canopy slabs — no staircases.
 - 🧱 **Stud counting** — in stud-style pictures every stud is 1 stud, so a face with 9×3 studs is a 9×3 part. The builder counts.
-- 🟥 **Roblox rules built in** — stud scale, one primitive = one Part, BrickColors, 21 Roblox materials, rig-ready groups. Styles: **Smooth (modern)**, **Studs (classic)**, **Stylized low-poly (trending)**; surfaces: **Smooth / Studs on top / Studs everywhere**.
+- 🟥 **Roblox rules built in** — stud scale, one primitive = one Part, BrickColors, 21 Roblox materials, rig-ready groups. Styles: **Smooth (modern)**, **Studs (classic)**, **Stylized low-poly (trending)**, **House (2022 variants)**; surfaces: **Smooth / Studs on top / Studs everywhere / House**.
 - 📦 **Exports to Roblox Studio** (`.rbxmx`: anchored Parts & WedgeParts in named Models, studs surfaces) plus GLB / OBJ / JSON; imports BlockBench `.bbmodel`.
 - 🗂️ **Batch import** — turn a whole folder of pictures into projects; scans run as your free quota allows and resume later.
-- 🤖 **Claude Code integration (MCP)** — Claude drives the editor with 26 tools for the best builds, no API key needed.
+- 🤖 **Claude Code integration (MCP)** — Claude drives the editor with 37 tools for the best builds, no API key needed.
 
-**Measured on test pictures:** silhouette match with the original picture **0.90** for a stud-style fish and a stud-style tree after auto-polish (1.0 = identical).
+**Measured on test pictures:** silhouette match with the original picture **0.90** for a stud-style fish and a stud-style tree after auto-polish (1.0 = identical). Tree mode on the blue stud tree: **0.88** in the house style with a full back side and roots (Hunyuan3D-2.1 scan, 62 parts; back/left/right 0.96–0.97 covered; 0.90 front-only), **0.86** / **0.85** as classic studs with Hunyuan3D-2.1 / TRELLIS (21 parts).
 
 ---
 
@@ -119,12 +121,52 @@ Keep BlockForge open, start a **new** Claude Code session and say:
 > *Use blockforge: open my project, read the build guide, measure the scan with mesh_slices, count the studs in the picture, build it, run polish_model and colors_from_picture, check with render_vs_picture and fix what's red or blue, then export to Roblox.*
 
 <details>
-<summary>All 26 MCP tools</summary>
+<summary>All 36 MCP tools</summary>
 
-`get_build_guide` · `new_project` · `set_style_preset` · `set_surface_style` · `generate_references` · `generate_part_reference` · `generate_mesh` · `set_mesh_transform` · `list_references` · `view_reference` · `get_model` · `add_parts` · `update_parts` · `delete_parts` · `mirror_part` · `duplicate_part` · `clear_model` · `roblox_snap` · `render_views` · **`render_vs_picture`** · **`polish_model`** · **`colors_from_picture`** · `render_comparison` · `mesh_slices` · `blockify_mesh` · `export_roblox`
+`get_build_guide` · `new_project` · `set_style_preset` · `set_surface_style` · `generate_references` · `generate_part_reference` · `generate_mesh` · `set_mesh_transform` · `list_references` · `view_reference` · `get_model` · `add_parts` · `update_parts` · `delete_parts` · `mirror_part` · `duplicate_part` · `clear_model` · `roblox_snap` · `render_views` · **`render_vs_picture`** · **`polish_model`** · **`colors_from_picture`** · `render_comparison` · `mesh_slices` · **`tree_skeleton`** · **`tree_template`** · **`tree_roots`** · **`check_sides`** · **`style_check`** · **`check_geometry`** · **`add_detail`** · **`vary_shades`** · **`export_studio`** · **`scale_model`** · `blockify_mesh` · `export_roblox`
 
 **Claude Desktop:** add `{"mcpServers": {"blockforge": {"command": "node", "args": ["<folder>/mcp/mcp-server.js"]}}}` to `claude_desktop_config.json`.
 </details>
+
+### 🌳 Trees (tree mode)
+Generic slicing turns a tree into a lumpy pile of blocks. When the subject is a tree, bush or plant (or you call `get_build_guide` with `tree: true`), the build guide switches to tree rules:
+
+> *Use blockforge: open my tree project, generate_mesh with backend hunyuan21, read the build guide, run tree_skeleton, build the trunk/branches/canopy from it, count the studs on each leaf block in the picture, run polish_model and colors_from_picture, check render_vs_picture, export.*
+
+`tree_skeleton` voxelizes the scan and returns:
+- **wood vs leaves** — split by the color of the trunk base vs the crown, so dark-green trunks with purple leaves work too (falls back to shape when both are one color); a flat ground plate under the scan is ignored;
+- **trunk axis** — center and width per height, plus **trunk sections** to build as stacked boxes;
+- **branches / roots** — straight segments (start → end, length, thickness, tilt) with a ready-made rotated box for each (bent branches are split until each piece is straight);
+- **canopy clusters** — box-like groups of leaf voxels (k-means, the count chosen by how well boxes fill them) with bounds, fill ratio and color;
+- **accents** — flowers, fruit and light leaf plates on the canopy.
+
+`add: true` also drops a draft of all those boxes into a `Tree` group. Rules: one box per trunk section, one rotated box per branch (`roblox_snap` with `keep_tilt: true` keeps their angles in classic studs style), 1–3 layered slabs per canopy cluster, stud counts from the picture.
+
+### 🏠 House style (the game's own trees)
+Preset **Roblox — House style** (or surface **House**) builds like the game's 50 hand-made trees (measured in `training/STYLE.md`):
+- **Export:** every Part is `SmoothPlastic` + a Roblox **MaterialVariant** from the "2022" pack (`2022 Small Universal` by default, `2022 Small Stud` for trunks/branches/roots, `2022 Weld` for balls; set per part with `variant`), plus **4 Decals** on Front/Back/Left/Right (`rbxassetid://127473043565552`, black, 85 % transparent) for the soft shading. No Studs surfaces. The variants must exist in your place's `MaterialService` (folders with the "2022" pack). In a place without them the parts fall back to plain SmoothPlastic; the decals still show.
+- **Geometry:** free sizes and organic tilts. `roblox_snap` does nothing in this style. Trunks are bent, tapering segments; roots are flat boxes tilted ~38°; each canopy blob is a core box plus 2–6 face plates with the same rotation (the "pillow" look).
+- **Roots:** `tree_roots` adds the game's Sunflower roots around a trunk base: a ring of 4 collar blocks and 4–6 flat roots that taper to a point on the ground, all around (`style: "slabs"` = the older tilted-slab recipe). `spread` sets how far they reach; `buttress: true` adds a chunky sloped flare per root from high on the trunk down into the root (fuller, less plain base).
+- **Design rules:** [docs/TREE_DESIGN_RULES.md](docs/TREE_DESIGN_RULES.md) — the rules and anti-rules every tree follows (loaded into the builder at startup; edit them to change how trees are built).
+- **Details:** `add_detail` places designed elements (leaf, sprig, fruit, flower, crystal, studded plate, ornament, lantern, spot, drip, star, mushroom, bolt, banana; hanging ones — drip, ornament, lantern, banana — always hang straight down); `scatter` spreads them evenly all around the tree on free outward faces and skips spots where they would end up inside other parts. `vary_shades` gives big areas a ±3–5% shade variation.
+- **Clean geometry:** `check_geometry` finds parts that cross through others, barely poke out, are hidden inside others, z-fight, or are stacked blocks whose corners stick out past the block above/below (EDGE, like a misaligned trunk) (`fix: true` removes hidden ones and nudges z-fighting ones).
+- **Studio:** `export_studio` writes a Luau script that builds the model straight into Roblox Studio (run it with the Studio MCP or the command bar). `scale_model` scales the whole model evenly around its ground centre, e.g. `height: 22` to match the game's grown trees (≈20–23 studs).
+- **Analyzer:** `node scripts/analyze-trees.mjs` splits every reference tree into roots, collar, trunk segments, branches, canopy blobs (core + face plates) and details, and writes `training/analysis/` (per-tree numbers + house statistics). `style_check` compares your build with those statistics and the root recipe.
+- **Templates:** `tree_skeleton` lists the closest of the 50 trees (by shape and colors). `tree_template` outlines one or imports it scaled to the scan (`add: true`). They are read from `training/studio-trees/`.
+
+### 🧊 Which 3D scan model?
+| Backend (Settings → 3D scan model) | Space | Notes |
+|---|---|---|
+| `trellis` (default) | trellis-community/TRELLIS | fast (~20 s), soft/blobby shapes |
+| `trellis2` | microsoft/TRELLIS.2 | more detail, two calls |
+| `hunyuan3d` | tencent/Hunyuan3D-2 | shape + texture |
+| `hunyuan21` | tencent/Hunyuan3D-2.1 | **sharpest for stud builds** — separate blocks, studs and flowers survive; PBR texture. Takes 2–4 min and asks for **270 s** of ZeroGPU, so it needs an HF token with enough daily quota (anonymous users may not request that much). Its ground shadow comes out as a thin plate, which BlockForge cuts off automatically. |
+| `comfyui` | your own ComfyUI (local) | **No quota, offline.** Runs ComfyUI's built-in Hunyuan3D-2 nodes on your GPU (an 8 GB card is enough for `hunyuan3d-dit-v2-mv-turbo_fp16.safetensors`, 4.9 GB, from [Comfy-Org/hunyuan3D_2.0_repackaged](https://huggingface.co/Comfy-Org/hunyuan3D_2.0_repackaged/tree/main/split_files) → `ComfyUI/models/checkpoints`). Multi-view: back/left/right references are sent too, so the far side is real. Shape only (no texture); colors come from the picture. Start ComfyUI first. |
+| `sam3d` | dev-bjoern/sam3d-objects-mcp | Meta SAM 3 + SAM 3D Objects (the official facebook/sam-3d-objects Space is gated). Segments `SAM3D_PROMPT` (default `object`) in the original picture itself, returns a GLB. Also asks for 270 s of ZeroGPU. Spaces that only return a Gaussian-splat PLY (e.g. fayyazio/sam3d-objects-gradio) are not supported — a splat has no surface to voxelize or texture. |
+
+**No scan?** (GPU quota used up, Space down) `render_vs_picture` still works: the picture is cut out (BRIA, or a local sky/ground flood fill) and its camera is matched against your model once (`rematch: true` to redo). It's less exact than with a scan, because a wrong model can pull the camera a little. Polish still needs a scan.
+
+`generate_mesh` takes an optional `backend` to try another model for one scan without changing Settings.
 
 ---
 
@@ -180,9 +222,9 @@ projects/                 your work (local only)
 
 ## 🙏 Credits
 
-[three.js](https://threejs.org) · [TRELLIS](https://github.com/microsoft/TRELLIS) · [Hunyuan3D-2](https://github.com/Tencent/Hunyuan3D-2) · [BRIA RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0) · [Gradio](https://www.gradio.app) · [Hugging Face](https://huggingface.co) · [Pollinations](https://pollinations.ai) · [Google Gemini](https://ai.google.dev) · [Anthropic Claude](https://www.anthropic.com)
+[three.js](https://threejs.org) · [TRELLIS](https://github.com/microsoft/TRELLIS) · [Hunyuan3D-2 / 2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) · [SAM 3D Objects](https://github.com/facebookresearch/sam-3d-objects) · [BRIA RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0) · [Gradio](https://www.gradio.app) · [Hugging Face](https://huggingface.co) · [Pollinations](https://pollinations.ai) · [Google Gemini](https://ai.google.dev) · [Anthropic Claude](https://www.anthropic.com)
 
-> ⚠️ BRIA RMBG-2.0 is licensed for **non-commercial** use — check its license before commercial projects. The models you make are yours; check each service's terms for the pictures you use.
+> ⚠️ BRIA RMBG-2.0 and Hunyuan3D-2.1 are licensed for **non-commercial** use (Hunyuan: Tencent Hunyuan Non-Commercial License) — check its license before commercial projects. The models you make are yours; check each service's terms for the pictures you use.
 
 ## 📄 License
 

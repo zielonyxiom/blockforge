@@ -11,6 +11,15 @@ import { PRESETS, DEFAULT_PRESET, presetOf, nearestBrickColor } from './roblox.j
 import { llmReady, llmName, listModels, PROVIDERS } from './llm.js';
 import { imageModelName, canEditImages } from './images.js';
 import { importFolder, runScanQueue, queueSummary } from './batch.js';
+import { treeIndex, loadTemplate, closestTrees, templateParts } from './templates.js';
+import { removeBackground } from './mesh3d.js';
+import { rootParts, sunflowerRoots, THIN } from './trees.js';
+import { analyzeTree, summarize, styleReport, geometryIssues, parts as analyzeParts } from './analyze.js';
+import { detailParts, scatterTargets, shade, DETAILS } from './details.js';
+const color6 = (c) => String(c).toLowerCase();
+const r3 = (v) => Math.round(v * 1000) / 1000;
+
+let houseStats = null; // statistics of the game's trees (training/studio-trees), computed once
 
 loadConfig();
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
@@ -172,9 +181,9 @@ async function requestRender(views) {
 }
 
 // The picture's camera (matched once, then cached). Turns the scan so the picture is the front view.
-async function pictureCam() {
+async function pictureCam({ rematch = false } = {}) {
   const m = project.meta.mesh;
-  if (!m?.cutout) return null;
+  if (!m?.cutout) return pictureOnlyCam({ rematch });
   const url = `/projects/${project.slug}/${m.cutout}`;
   if (!m.photoCam) {
     let cam = await requestBrowser('match_photo', { url });
@@ -189,6 +198,76 @@ async function pictureCam() {
     log('info', `Matched the picture's camera: yaw ${cam.yaw}°, pitch ${cam.pitch}°, lens ${cam.fov}° (silhouette match ${cam.score}).`);
   }
   return { url, cam: m.photoCam };
+}
+
+// No 3D scan (no GPU quota, or the scan failed): cut the picture out (BRIA, or a local
+// sky/ground flood fill when that fails) and match its camera against the MODEL once it has
+// parts. Less exact than a scan (a wrong model can pull the camera a little), so the camera
+// is matched once and kept; pass rematch to fit it again after big changes.
+async function pictureOnlyCam({ rematch = false } = {}) {
+  const pic = (project.meta.picture ||= {});
+  if (!pic.cutout) {
+    const refs = ctx.loadRefs(() => true);
+    const ref = refs.find((r) => r.view === 'three_quarter') || refs.find((r) => r.view === 'front') || refs[0];
+    if (!ref) return null;
+    let buf;
+    try { buf = await removeBackground(ref.buf, { log }); }
+    catch (e) {
+      log('info', `Background removal failed (${e.message.slice(0, 100)}); cutting the picture out locally instead.`);
+      const r = await requestBrowser('local_cutout', { url: `/projects/${project.slug}/refs/${ref.file}` });
+      buf = dataUrlToBuffer(r.image);
+    }
+    pic.cutout = ctx.saveProjectFile('cutout.png', buf);
+    saveMeta();
+  }
+  const url = `/projects/${project.slug}/${pic.cutout}`;
+  if (rematch) delete pic.cam;
+  if (!pic.cam) {
+    if (!store.model.parts.some((p) => p.type === 'cube')) throw new Error('Build some parts first: without a 3D scan the picture\'s camera is matched against your model.');
+    pic.cam = await requestBrowser('match_photo', { url, subject: 'model' });
+    saveMeta();
+    log('info', `Matched the picture's camera to your model (no scan): yaw ${pic.cam.yaw}°, pitch ${pic.cam.pitch}°, lens ${pic.cam.fov}° (match ${pic.cam.score}).`);
+  }
+  return { url, cam: pic.cam };
+}
+
+// The picture only shows one side: check the model from the back and the sides too.
+// Coverage = share of the scan's silhouette the model fills from that side.
+async function sidesReport({ image = false } = {}) {
+  const cubes = store.model.parts.filter((p) => p.type === 'cube' && p.visible !== false);
+  if (!cubes.length) throw new Error('The model is empty.');
+  const thin = cubes.filter((p) => Math.min(...p.size) <= THIN);
+  const b = store.bounds();
+  const mw = b.max[0] - b.min[0], md = b.max[2] - b.min[2];
+  const warn = [];
+  let line = '', sheet = null;
+  if (meshInfo()) {
+    const r = await requestBrowser('compare', { views: ['front', 'back', 'left', 'right'] });
+    const c = r.cover;
+    line = `ALL SIDES (share of the scan's silhouette your model covers): front ${c.front.toFixed(2)}, back ${c.back.toFixed(2)}, left ${c.left.toFixed(2)}, right ${c.right.toFixed(2)}.`;
+    if (c.back < 0.8 || c.back < c.front - 0.08) warn.push('the BACK is missing mass: build the far side (mirror the front details z→−z, rotation (rx,ry,rz)→(−rx,−ry,rz), shifted/re-angled 0.2–0.4; or its own decorations), and give blobs back plates');
+    for (const v of ['left', 'right']) if (c[v] < 0.75) warn.push(`the ${v.toUpperCase()} side is thin or empty: add depth (≈0.87× the width), side plates and parts that stick out sideways`);
+    const info = await requestBrowser('mesh_info');
+    if (info?.size) {
+      const mr = md / Math.max(1e-6, mw), sr = info.size[2] / Math.max(1e-6, info.size[0]);
+      line += ` Depth/width: model ${mr.toFixed(2)}, scan ${sr.toFixed(2)}.`;
+      if (mr < sr * 0.85) warn.push(`the model is shallower than the scan (depth/width ${mr.toFixed(2)} vs ${sr.toFixed(2)}): push blobs/parts out to the back and front`);
+    }
+    if (image) line += ' Image: scan vs model from front, back, left, right (RED = scan mass you lack).';
+    if (image) sheet = dataUrlToBuffer(r.image);
+  } else {
+    line = `ALL SIDES: no scan to compare with. Model depth/width ${(md / Math.max(1e-6, mw)).toFixed(2)} (house trees ≈0.87, flat objects ≥0.4). Check render_views back/left/right.`;
+  }
+  // Silhouettes can't see a bare back (it mirrors the front), so also compare where the
+  // small details (flowers, fruit, eyes, knots…) sit: front half vs back half.
+  const mh = b.max[1] - b.min[1];
+  const zs = cubes.map((p) => p.position[2]).sort((p, q) => p - q), midZ = zs[zs.length >> 1]; // median: one big back blob doesn't shift it
+  const small = cubes.filter((p) => Math.max(...p.size) <= 0.2 * mh);
+  const front = small.filter((p) => p.position[2] > midZ + 0.15 * md).length, back = small.filter((p) => p.position[2] < midZ - 0.15 * md).length;
+  if (front >= 3 && back < front / 2) warn.push(`small details sit on the FRONT only (${front} in front, ${back} at the back): add the back's own details (mirrored and shifted, or new ones)`);
+  if (md < 0.4 * mw) warn.push('the model is flat: depth should be ≥0.4× the width (≈0.87× for canopies and thick objects)');
+  if (thin.length) warn.push(`${thin.length} part(s) are ≤${THIN} thick and read as glitchy strips: ${thin.slice(0, 8).map((p) => p.name).join(', ')}${thin.length > 8 ? '…' : ''} — make them chunkier or delete them`);
+  return { image: sheet, text: `${line}${warn.length ? '\nFIX: ' + warn.join('; ') + '.' : ' All sides look filled.'} Look at render_views back/left/right for details the silhouette can't show (empty or flat faces).` };
 }
 
 // Runs any editor tool (model + render + scan). Returns { text, image? }.
@@ -219,14 +298,177 @@ async function runTool(name, input = {}) {
       store.exec({ op: 'add_parts', parts }, 'tool');
       return { text: `Added ${r.parts.length} blocks in group "${group}" (voxel ${r.voxel} studs, grid ${r.grid.join('×')}, palette ${r.palette.join(' ')}).` };
     }
+    case 'tree_skeleton': {
+      const res = Math.min(64, Math.max(24, Math.round(input.res || 48)));
+      const t = await requestBrowser('tree_skeleton', { res, clusters: Math.max(0, Math.round(input.clusters || 0)) }, 120000);
+      const v3 = (a) => `[${a.join(', ')}]`;
+      const bc = (h) => `${h} (${nearestBrickColor(h).name})`;
+      const lines = [
+        `Tree skeleton of the 3D scan (voxel ${t.voxel} studs, grid ${t.grid.join('×')}, height ${t.height} studs). Wood/leaf split by ${t.split === 'color' ? 'color' : 'shape (wood and leaves have the same color)'}: wood ${bc(t.wood_color)}, leaves ${bc(t.leaf_color)}.${t.ground ? ` Ignored a ${t.ground}-stud ground plate under the scan (not part of the tree).` : ''}`,
+        `TRUNK AXIS (center x,z per height; visible trunk ends at y ${t.trunk_top}):`,
+        ...t.axis.map((a) => `  y ${a.y}: center ${v3(a.center)}, ${a.width} × ${a.depth}`),
+        `TRUNK SECTIONS (build each as one box, bottom to top):`,
+        ...t.trunk.map((s, i) => `  ${i + 1}. y ${s.min[1]}–${s.max[1]}: position ${v3(s.center)}, size ${v3(s.size)}`),
+        `BRANCHES/ROOTS (${t.branches.length}; one rotated box each, Y axis from start to end):`,
+        ...t.branches.map((b, i) => `  ${i + 1}. ${b.kind} start ${v3(b.start)} → end ${v3(b.end)}, length ${b.length}, thick ${b.thickness}, tilt ${b.tilt_deg}° → box position ${v3(b.box.position)} size ${v3(b.box.size)} rotation ${v3(b.box.rotation)}`),
+        `CANOPY CLUSTERS (${t.canopy.length}; 1–3 boxes each, fill = how box-like it is):`,
+        ...t.canopy.map((c, i) => `  ${i + 1}. min ${v3(c.min)} max ${v3(c.max)} → position ${v3(c.center)} size ${v3(c.size)}, fill ${c.fill}, color ${bc(c.color)}`),
+        t.accents.length ? `ACCENTS (flowers/fruit/light plates; ${t.accents.length}):` : 'ACCENTS: none found.',
+        ...t.accents.map((a) => `  center ${v3(a.center)} size ${v3(a.size)} color ${bc(a.color)}`),
+      ];
+      const info = await requestBrowser('mesh_info');
+      const near = closestTrees({ size: info.size, wood: t.wood_color, leaf: t.leaf_color });
+      if (near.length) lines.push(`CLOSEST HOUSE TREES (shape + colors; lower = closer; see tree_template): ${near.map((n) => `${n.file.replace(/\.json$/, '')} (${n.parts} parts, ${n.extents.join('×')}, ${n.colors.slice(0, 3).join(' ')}, score ${n.score})`).join(' · ')}`);
+      if (input.add) {
+        const g = store.uniqueName('Tree');
+        const parts = [{ kind: 'group', name: g, pivot: [0, 0, 0] },
+          { kind: 'group', name: `${g}_Trunk`, parent: g, pivot: [0, 0, 0] },
+          { kind: 'group', name: `${g}_Branches`, parent: g, pivot: [0, 0, 0] },
+          { kind: 'group', name: `${g}_Canopy`, parent: g, pivot: [0, 0, 0] },
+          ...t.trunk.map((s, i) => ({ name: `Trunk_${i + 1}`, parent: `${g}_Trunk`, position: s.center, size: s.size, color: t.wood_color })),
+          ...t.branches.map((b, i) => ({ name: `${b.kind === 'root' ? 'Root' : 'Branch'}_${i + 1}`, parent: `${g}_Branches`, ...b.box, color: t.wood_color })),
+          ...t.canopy.map((c, i) => ({ name: `Canopy_${i + 1}`, parent: `${g}_Canopy`, position: c.center, size: c.size, color: c.color })),
+          ...t.accents.map((a, i) => ({ name: `Accent_${i + 1}`, parent: `${g}_Canopy`, position: a.center, size: a.size, color: a.color })),
+        ];
+        store.exec({ op: 'add_parts', parts }, 'tool');
+        lines.push(`Added a draft in group "${g}" (${parts.length - 4} boxes). Refine it against the picture: stud counts, layered canopy slabs, branch angles.`);
+      }
+      return { text: lines.join('\n') };
+    }
+    case 'tree_template': {
+      if (!input.file) {
+        const all = treeIndex();
+        if (!all.length) throw new Error('No tree templates: training/studio-trees/index.json is missing.');
+        return { text: `House-style tree templates (${all.length}; extents x×y×z studs):\n${all.map((t) => `- ${t.file.replace(/\.json$/, '')}: ${t.parts} parts, ${t.extents.join('×')}, colors ${t.colors.join(' ')}`).join('\n')}` };
+      }
+      const { entry, model } = loadTemplate(input.file);
+      if (input.add) {
+        const height = input.height || meshInfo()?.height || undefined;
+        const prefix = store.uniqueName(`Template_${entry.file.replace(/\.json$/, '')}`);
+        const { parts, scale } = templateParts(model, { height, prefix });
+        store.exec({ op: 'add_parts', parts }, 'tool');
+        return { text: `Imported ${entry.name} (${entry.parts} parts) as group "${prefix}", scaled ×${scale}${height ? ` to ${height} studs tall` : ''}. Now fit it to the picture: move/resize/re-tilt blobs and trunk segments, delete what the picture doesn't have.` };
+      }
+      const outline = new ModelStore(model).describe();
+      return { text: `Template ${entry.name} (${entry.extents.join('×')} studs, ${entry.parts} parts, colors ${entry.colors.join(' ')}):\n${outline}` };
+    }
     case 'render_vs_picture': {
-      const pic = await pictureCam();
-      if (!pic) throw new Error('render_vs_picture needs a 3D scan made from the picture (it uses the background-free cut-out). Run the 3D scan step first.');
+      const pic = await pictureCam({ rematch: !!input.rematch });
+      if (!pic) throw new Error('render_vs_picture needs the picture: add a reference image first.');
       const r = await requestBrowser('picture_compare', { url: pic.url, cam: pic.cam });
+      const sides = await sidesReport().catch(() => null);
       return {
         image: dataUrlToBuffer(r.image),
-        text: `Model vs your picture, same camera. IoU ${r.iou.toFixed(2)} (1.0 = identical silhouette). RED = in the picture but missing from the model → add/extend. BLUE = in the model but not in the picture → shrink/move/remove. Also compare stud counts per face, part edges and colors directly.`,
+        text: `Model vs your picture, same camera. IoU ${r.iou.toFixed(2)} (1.0 = identical silhouette). RED = in the picture but missing from the model → add/extend. BLUE = in the model but not in the picture → shrink/move/remove. Also compare stud counts per face, part edges and colors directly.` +
+          (sides ? `\n${sides.text}` : ''),
       };
+    }
+    case 'scale_model': {
+      // uniform scale around the model's ground center, so it keeps standing on y = 0
+      const cubes = store.model.parts.filter((p) => p.type === 'cube');
+      if (!cubes.length) throw new Error('The model is empty.');
+      const b = store.bounds(), h = b.max[1] - b.min[1];
+      const f = input.height ? input.height / h : input.factor;
+      if (!(f > 0)) throw new Error('Give height (target studs) or factor.');
+      const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2, y0 = b.min[1];
+      const at = (p) => [r3((p[0] - cx) * f + cx), r3((p[1] - y0) * f), r3((p[2] - cz) * f + cz)];
+      const updates = store.model.parts.map((p) => (p.type === 'group' ? { id: p.id, pivot: at(p.pivot) } : { id: p.id, position: at(p.position), size: p.size.map((v) => r3(v * f)) }));
+      store.exec({ op: 'update_parts', updates }, 'tool');
+      return { text: `Scaled the model ×${f.toFixed(3)} (${h.toFixed(1)} → ${(h * f).toFixed(1)} studs tall), standing on the ground.` };
+    }
+    case 'add_detail': {
+      const group = store.uniqueName(input.group || `Details_${input.kind || 'mixed'}`);
+      const head = [{ kind: 'group', name: group, ...(input.parent ? { parent: input.parent } : {}), pivot: [0, 0, 0] }];
+      let anchors = input.items || [];
+      if (input.scatter) {
+        const sc = input.scatter, want = sc.count || 8, existing = analyzeParts(store.model);
+        // ask for extra candidates (still spread all around) and keep the ones whose pieces stay
+        // clear of other parts: no piece center inside a part, at most half its corners inside
+        const cands = scatterTargets(store.model, existing, { on: sc.on, count: want * 3, faces: sc.faces || 'side' });
+        const free = (pc) => {
+          const probe = analyzeParts({ parts: pc.map((p, i) => ({ ...p, id: `probe${i}`, type: 'cube', shape: p.shape || 'box' })) });
+          const inside = (A, w) => { const d = [0, 1, 2].map((i) => w[i] - A.position[i]); return [0, 1, 2].every((j) => Math.abs(A.R[0][j] * d[0] + A.R[1][j] * d[1] + A.R[2][j] * d[2]) < A.size[j] / 2 - 0.02); };
+          return probe.every((q) => {
+            if (existing.some((A) => inside(A, q.position))) return false;
+            let n = 0;
+            for (const sx of [-0.5, 0.5]) for (const sy of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) {
+              const w = [0, 1, 2].map((i) => q.position[i] + q.R[i][0] * sx * q.size[0] + q.R[i][1] * sy * q.size[1] + q.R[i][2] * sz * q.size[2]);
+              if (existing.some((A) => inside(A, w))) n++;
+            }
+            return n <= 4;
+          });
+        };
+        anchors = [];
+        for (const c of cands) {
+          if (anchors.length >= want) break;
+          const a = { ...c, kind: input.kind, size: input.size, colors: input.colors };
+          if (free(detailParts({ kind: a.kind, position: a.position, normal: a.normal, roll: a.roll, size: a.size, colors: a.colors || {} }))) anchors.push(a);
+        }
+      }
+      if (!anchors.length) throw new Error('Give items (position/normal per detail) or scatter {on, count, faces}.');
+      const body = anchors.flatMap((a, i) => {
+        const sub = `${group}_${i + 1}`;
+        return [{ kind: 'group', name: sub, parent: group, pivot: a.position }, ...detailParts({ kind: a.kind || input.kind, position: a.position, normal: a.normal, roll: a.roll ?? 0, size: a.size || input.size, colors: { ...(input.colors || {}), ...(a.colors || {}) }, group: sub })];
+      });
+      store.exec({ op: 'add_parts', parts: [...head, ...body] }, 'tool');
+      return { text: `Added ${anchors.length} detail(s) in group "${group}" (${body.filter((p) => p.kind !== 'group').length} parts)${input.scatter ? ', spread all around the tree' : ''}. Check with check_geometry and render_views.` };
+    }
+    case 'vary_shades': {
+      // nudge the brightness of same-colored parts a little (±amount) so big areas look alive
+      const amt = Math.min(0.12, Math.max(0.01, input.amount ?? 0.04));
+      const target = input.color && color6(input.color);
+      const list = store.model.parts.filter((p) => p.type === 'cube' && (!target || p.color === target) && (!input.group || p.name.startsWith(input.group)));
+      const updates = list.map((p, i) => ({ id: p.id, color: shade(p.color, 1 + amt * [0, 1, -1, 0.5, -0.5][i % 5]) }));
+      if (updates.length) store.exec({ op: 'update_parts', updates }, 'tool');
+      return { text: `Varied the shade of ${updates.length} part(s) by up to ±${Math.round(amt * 100)}%.` };
+    }
+    case 'check_geometry': {
+      const g = geometryIssues(store.model);
+      const nm = (p) => p.name;
+      const lines = [];
+      const list = (arr, fmt) => arr.slice(0, 15).map(fmt).join('; ') + (arr.length > 15 ? ` …+${arr.length - 15}` : '');
+      if (g.crossing.length) lines.push(`CROSSING (${g.crossing.length}) — goes through and out the far side; move it so only one end is sunk in, or shorten it: ${list(g.crossing, ([b, a]) => `${nm(b)} through ${nm(a)}`)}`);
+      if (g.poke.length) lines.push(`POKE (${g.poke.length}) — barely sticks out; push it fully in or out by ≥0.15: ${list(g.poke, ([b, a, s]) => `${nm(b)} out of ${nm(a)} by ${s.toFixed(2)}`)}`);
+      if (g.hidden.length) lines.push(`HIDDEN (${g.hidden.length}) — fully inside another part, invisible: ${list(g.hidden, ([b, a]) => `${nm(b)} in ${nm(a)}`)}`);
+      if (g.edge.length) lines.push(`EDGE (${g.edge.length}) — a stacked block's corners stick out past the block below; turn it to the same yaw (±5°) and make it a bit narrower so it nests: ${list(g.edge, ([b, a, w]) => `${nm(b)} on ${nm(a)} by ${w.toFixed(2)}`)}`);
+      if (g.zfight.length) lines.push(`Z-FIGHT (${g.zfight.length}) — flush faces flicker; offset one by ≥0.03: ${list(g.zfight, ([b, a]) => `${nm(b)} / ${nm(a)}`)}`);
+      if (input.fix) {
+        const del = [...new Set(g.hidden.map(([b]) => b.id))];
+        const updates = [];
+        for (const [b, a, n, s] of g.zfight) if (!del.includes(b.id)) {
+          const out = b.vol <= a.vol ? 1 : -1; // move the smaller part outward
+          updates.push({ id: b.id, move: n.map((v) => Math.round(v * s * 0.03 * out * 1000) / 1000) });
+        }
+        if (del.length) store.exec({ op: 'delete_parts', ids: del }, 'tool');
+        if (updates.length) store.exec({ op: 'update_parts', updates }, 'tool');
+        lines.push(`FIXED: deleted ${del.length} hidden part(s), nudged ${updates.length} z-fighting part(s) by 0.03. Crossing and poke parts need a design decision: fix them by hand.`);
+      }
+      return { text: lines.length ? lines.join('\n') : 'Clean: no crossing, poking, hidden or z-fighting parts.' };
+    }
+    case 'style_check': {
+      if (!houseStats) {
+        const trees = treeIndex().map((t) => analyzeTree(loadTemplate(t.file).model));
+        if (!trees.length) throw new Error('No house trees to compare with: training/studio-trees is missing.');
+        houseStats = summarize(trees);
+      }
+      const a = analyzeTree(store.model);
+      if (!a.parts) throw new Error('The model is empty.');
+      const t = a.trunk, rt = a.roots, cp = a.canopy;
+      return { text: `Structure of your model (${a.parts} parts, ${a.size.join('×')}): trunk ${t.segments} segment(s) ${t.base_width}→${t.top_width} wide, bare trunk ${t.bare_ratio}× height; collar ${a.collar}; roots ${rt.count} part(s) in ${rt.directions} direction(s), slope ${rt.slope_median ?? '–'}°; branches ${a.branches.count}; canopy from ${cp.start_ratio}× height, ${cp.blobs} blob(s), ${cp.plates_per_blob} plates/blob; details ${a.details.count} (front ${a.details.front} / back ${a.details.back}).\nCompared with the game's ${houseStats.parts.n} trees:\n${styleReport(a, houseStats)}` };
+    }
+    case 'check_sides': {
+      const sides = await sidesReport({ image: true });
+      return { image: sides.image, text: sides.text };
+    }
+    case 'tree_roots': {
+      const group = store.uniqueName(input.group || 'Roots');
+      const opts = { position: input.position, ground: input.ground ?? 0, trunkWidth: input.trunk_width || 2, spread: input.spread || 1, color: input.color, group, parent: input.parent };
+      const slabs = input.style === 'slabs';
+      const parts = slabs ? rootParts(opts) : sunflowerRoots({ ...opts, count: input.count || 4, buttress: !!input.buttress });
+      store.exec({ op: 'add_parts', parts }, 'tool');
+      return { text: slabs
+        ? `Added slab roots in group "${group}": collar + step, 6 two-part roots (45–58° slabs with ~18° tips) and 2 knots (${parts.length - 1} parts).`
+        : `Added Sunflower roots in group "${group}": a ring of 4 collar blocks and ${input.count || 4} flat roots, each a chain of 4 slabs on the ground tapering to a point (${parts.length - 1} parts, trunk width ${opts.trunkWidth}).` };
     }
     case 'polish_model': {
       if (!meshInfo()) throw new Error('polish_model needs a 3D scan (run the 3D scan step first).');
@@ -265,6 +507,14 @@ async function runTool(name, input = {}) {
       }
       if (updates.length) store.exec({ op: 'update_parts', updates }, 'tool');
       return { text: `Recolored ${updates.length} parts in ${changes.length} color groups from the picture${snap ? ' (snapped to BrickColors)' : ''}: ${changes.join(', ')}.${kept.length ? ` Kept ${kept.join(', ')} (too small to measure).` : ''}` };
+    }
+    case 'export_studio': {
+      const name = input.name || store.model.name || project.meta.name;
+      const r = await requestBrowser('export_luau', { name, target: input.position || [0, 0, 0] });
+      const file = `${slugify(name)}.studio.lua`;
+      const full = path.join(projectPaths(project.slug).dir, file);
+      fs.writeFileSync(full, r.lua);
+      return { text: `Wrote a Studio build script (${(r.lua.length / 1024).toFixed(1)} KB) to ${full}. Run its contents with the Roblox Studio MCP execute_luau tool (datamodel Edit) or paste it into the Studio command bar: it builds Model "${name}" in workspace at x ${(input.position || [0, 0, 0])[0]}, z ${(input.position || [0, 0, 0])[2]} on the ground found there, replacing an older model with that name.` };
     }
     case 'export_roblox': {
       const r = await requestBrowser('export_rbxmx');
@@ -475,7 +725,7 @@ const routes = {
     startJob('3D scan', (signal) => generateScan(ctx, signal));
     return { ok: true };
   },
-  'POST /api/gen/mesh': async () => { await generateScan(ctx); return { mesh: meshInfo() }; },
+  'POST /api/gen/mesh': async (b) => { await generateScan(ctx, undefined, { backend: b.backend || undefined }); return { mesh: meshInfo() }; },
 
   // Projects
   'GET /api/projects': () => ({ projects: listProjects(), current: project?.slug }),
