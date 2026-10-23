@@ -76,3 +76,14 @@ Simple means few, big, clear shapes. Detailed means designed little elements on 
 - check_sides: back/left/right covered, details on the back too.
 - style_check: no ✗.
 - render_views back/left/right look as finished as the front.
+
+## Concept trees (objects / creatures) — lessons from the user
+- No repeats: check the game's existing trees first (Mushroom, Crystal, Kraken, Lantern, Moon, Windmill, Honeycomb, Whale, Rook... are taken).
+- An object/creature tree must look like the real thing (a chess knight = a real horse head with mane, eyes, muzzle), not a leafy imitation. No decorative leaves on butterflies, clocks, balloons.
+- The base belongs to the piece: same palette and style as the top, wide enough that the top sits inside it (no corners poking out).
+- Organic shapes are fans of radiating tapered segments (wings, petals), never one flat box.
+- Keep patterns clean: no extra contrasting band, no random shade noise on stripes.
+- Roots: curved tapering tubes that end in a point resting ON the ground. Nothing sunk below ground: it looks cut off.
+- Stacked discs/bands overlap ~0.12; parts that only touch read as floating and leave gaps.
+- Fit the row by rescaling the whole model (Model:ScaleTo around the ground point), never by resizing parts. Measure height with a world-axis box, not GetBoundingBox (it can be rotated).
+- Studio helpers: `studio/TreeKitExtras.lua` (pillow, roots2, octSpots, shard, finish) on top of ServerStorage.TreeKit + TreeAudit.
