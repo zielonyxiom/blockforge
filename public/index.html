@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BlockForge</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">▣ BlockForge</div>
+    <div class="group">
+      <button id="btnProjects" title="Open / create projects">Projects</button>
+      <span id="projectName" class="muted"></span>
+    </div>
+    <div class="group">
+      <button id="btnUndo" title="Undo (Ctrl+Z)">↶</button>
+      <button id="btnRedo" title="Redo (Ctrl+Y)">↷</button>
+    </div>
+    <div class="group" id="modeButtons">
+      <button data-mode="translate" class="active" title="Move (W)">Move</button>
+      <button data-mode="rotate" title="Rotate (E)">Rotate</button>
+      <button data-mode="scale" title="Resize (R)">Size</button>
+    </div>
+    <div class="group">
+      <select id="viewSelect" title="Camera">
+        <option value="">Camera…</option>
+        <option value="front">Front</option><option value="back">Back</option>
+        <option value="left">Left</option><option value="right">Right</option>
+        <option value="top">Top</option><option value="three_quarter">3/4</option>
+      </select>
+      <select id="surfaceSelect" title="Part surfaces (also used in the Roblox export)">
+        <option value="smooth">Smooth</option>
+        <option value="studs">Studs on top</option>
+        <option value="studs_all">Studs everywhere</option>
+        <option value="house">House (2022 variants)</option>
+      </select>
+      <label class="check"><input type="checkbox" id="chkGrid" checked /> Grid</label>
+      <label class="check" title="Show the 3D scan as a see-through reference"><input type="checkbox" id="chkGhost" checked /> Scan ghost</label>
+    </div>
+    <div class="spacer"></div>
+    <div class="group">
+      <button id="btnSnap" title="Snap sizes, positions and colors to the Roblox rules of the current style">Roblox snap</button>
+      <button id="btnExportRoblox" class="primary" title="Download a .rbxmx model — drag it into Roblox Studio">Export Roblox</button>
+      <button id="btnImport" title="Import .json / .bbmodel">Import</button>
+      <button id="btnExportGlb">GLB</button>
+      <button id="btnExportObj">OBJ</button>
+      <button id="btnExportJson">JSON</button>
+      <button id="btnSettings">Settings</button>
+    </div>
+    <input type="file" id="fileImport" accept=".json,.bbmodel" hidden />
+  </header>
+
+  <main id="layout">
+    <aside id="left" class="panel">
+      <div class="panel-head">
+        <span>Outliner</span>
+        <div>
+          <button id="btnAddCube" title="Add cube">+ Cube</button>
+          <button id="btnAddGroup" title="Add group">+ Group</button>
+        </div>
+      </div>
+      <div id="outliner" tabindex="0"></div>
+      <div class="panel-foot">
+        <button id="btnDuplicate" title="Duplicate (Ctrl+D)">Duplicate</button>
+        <button id="btnMirror" title="Mirror across X">Mirror X</button>
+        <button id="btnDelete" title="Delete (Del)" class="danger">Delete</button>
+      </div>
+      <div class="panel-head"><span>Properties</span></div>
+      <div id="props"><p class="muted pad">Select a part.</p></div>
+    </aside>
+
+    <section id="viewport">
+      <div id="stats" class="muted"></div>
+      <div id="dropHint">Drop images here to add them as references</div>
+    </section>
+
+    <aside id="right" class="panel">
+      <div class="panel-head"><span>AI Builder</span><span id="jobBadge" class="badge" hidden></span></div>
+      <div class="pad stack">
+        <label class="lbl">Roblox style</label>
+        <select id="presetSelect" title="Image style + building rules used for this project"></select>
+        <label class="lbl">What to make</label>
+        <input id="subject" placeholder="e.g. Undead Skeleton Horse" />
+        <label class="lbl">Notes for Claude (optional)</label>
+        <textarea id="notes" rows="2" placeholder="e.g. glowing green eyes, keep it under 120 parts"></textarea>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="stepRefs" checked /> Reference shots</label>
+          <label class="check" title="Image → 3D on Hugging Face (TRELLIS / Hunyuan3D)"><input type="checkbox" id="stepMesh" checked /> 3D scan</label>
+        </div>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="stepParts" checked /> Part details</label>
+          <label class="check"><input type="checkbox" id="stepBuild" checked /> Build</label>
+        </div>
+        <div class="row">
+          <label class="lbl inline">Review rounds</label>
+          <input id="reviewRounds" type="number" min="0" max="10" value="2" class="num" title="How many times Claude renders, compares to the references and fixes (0 = no iteration)" />
+        </div>
+        <div class="row">
+          <button id="btnRun" class="primary grow" title="Text prompt → images → 3D scan → model">▶ Run pipeline</button>
+          <button id="btnFromImage" class="grow" title="Use the image(s) you added under References — no image generation">Build from my image</button>
+          <button id="btnStop" class="danger" hidden>■ Stop</button>
+        </div>
+        <details>
+          <summary>Run single steps</summary>
+          <div class="row wrap">
+            <button id="btnStepRefs">1. References</button>
+            <button id="btnStepPlan">2. Plan parts</button>
+            <button id="btnStepMesh">3. 3D scan</button>
+            <button id="btnStepParts">4. Part shots</button>
+            <button id="btnStepBuild">5. Build / Refine</button>
+          </div>
+        </details>
+        <div id="keyWarning" class="warn" hidden></div>
+      </div>
+
+      <div class="panel-head">
+        <span>References</span>
+        <div><button id="btnUploadRef" title="Add your own reference image">+ Image</button><button id="btnStyle" title="Style prompt used for image generation">Style</button></div>
+      </div>
+      <input type="file" id="fileRef" accept="image/*" multiple hidden />
+      <div id="refs" class="refs"></div>
+      <div id="plan" class="pad small muted"></div>
+
+      <div class="panel-head">
+        <span>3D scan</span>
+        <div><button id="btnMeshUpload" title="Use your own .glb as the 3D reference">+ GLB</button><button id="btnMeshDelete" title="Remove the 3D scan">✕</button></div>
+      </div>
+      <input type="file" id="fileMesh" accept=".glb" hidden />
+      <div class="pad stack">
+        <div class="row">
+          <div id="meshStatus" class="small muted grow"></div>
+          <label class="check" title="TRELLIS stores linear colors in its texture, making scans look too dark. On = fix that."><input type="checkbox" id="meshLinear" /> Fix dark texture</label>
+        </div>
+        <div class="row">
+          <button id="btnMeshYaw" title="Rotate the scan 90° if it doesn't face +Z (front)">⟳ 90°</button>
+          <button id="btnMeshOrient" title="Let Claude pick the rotation that matches the front reference">Auto</button>
+          <label class="lbl inline">Height</label>
+          <input id="meshHeight" type="number" step="0.5" min="0.5" class="num" title="Scan height in studs" />
+          <button id="btnCompare" class="grow" title="Render scan vs model with the same cameras">Compare</button>
+          <button id="btnVsPicture" class="grow" title="Model vs your original picture, from the picture's camera angle">Vs picture</button>
+        </div>
+        <div class="row">
+          <button id="btnPolish" class="grow primary" title="Automatically nudge every part to match the picture + scan 1:1">Auto-polish</button>
+          <button id="btnPicColors" class="grow" title="Color every visible part with its real color from the picture">Colors from picture</button>
+        </div>
+        <div class="row">
+          <button id="btnBlockify" class="grow" title="Turn the scan into blocks automatically">Auto-blockify</button>
+          <label class="lbl inline">Res</label>
+          <input id="blockRes" type="number" min="6" max="64" value="20" class="num" title="Voxels along the longest side" />
+          <label class="lbl inline">Colors</label>
+          <input id="blockColors" type="number" min="1" max="24" value="8" class="num" />
+        </div>
+      </div>
+
+      <div class="panel-head"><span>Log</span><button id="btnClearLog">Clear</button></div>
+      <div id="log"></div>
+    </aside>
+  </main>
+
+  <dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+  <div id="lightbox" hidden><img alt="" /></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
