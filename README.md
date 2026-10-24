@@ -2,7 +2,7 @@
 
 A local 3D modeling tool for block-built, stud-style models. Start from a picture or a blank scene, build the model from parts in the browser editor, check it against the reference, and export it to Roblox Studio or any 3D tool.
 
-![Front, three-quarter and side views of a model in the editor](docs/demo-views.jpg)
+![Stud-style trees, a themed set and animals built with BlockForge, shown in Roblox Studio](docs/showcase.jpg)
 
 ## Features
 
